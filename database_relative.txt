@@ -1,2 +1,2 @@
 1
-SMARIO64DS	nds	USA	1.0	Nintendo	1_Super Mario 64.nds	Super Mario 64.nds	16214400	1.jpg
+SMARIO64DS	nds	USA	smario64ds_1.0_usa.nds	Super Mario 64.nds	16214400	smario64ds_1.0_usa.jpg
