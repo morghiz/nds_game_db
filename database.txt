@@ -1,0 +1,1 @@
+1	SMARIO64DS	nds	USA	1.0	Nintendo	https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/1_Super Mario 64.nds	Super Mario 64.nds	16214400	https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/covers/1.jpg
