@@ -4,15 +4,18 @@ from pathlib import Path
 from typing import Optional, List
 from dataclasses import dataclass
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QTextEdit, QFileDialog, QMessageBox, QGroupBox, QGridLayout, QComboBox, QListWidget, QListWidgetItem, QSplitter, QTabWidget, QDialog, QDialogButtonBox
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import Qt, QSize # Importa QSize
+from PyQt6.QtGui import QPixmap, QIcon
 from PIL import Image
 from io import BytesIO
 import re
 import uuid
+import zipfile
+import tempfile
 
 DS_SCREEN_WIDTH = 256
 DS_SCREEN_HEIGHT = 192
+LIST_ICON_SIZE = 48
 
 def pil_to_qpixmap(pil_image: Image.Image) -> QPixmap:
     byte_array = BytesIO()
@@ -55,35 +58,38 @@ class DatabaseEntry:
         self.name = ""
         self.platform = "nds"
         self.region = "ANY"
-        self.version = "" # Internal only, not directly from database line
-        self.creator = "" # Internal only, not directly from database line
+        self.version = ""
+        self.creator = ""
         self.download_url = ""
         self.filename = ""
         self.filesize = "0"
         self.icon_url = ""
-        self.internal_file_id = "" # Generated based on name, version, region
+        self.internal_file_id = ""
 
         if line.strip():
             parts = line.strip().split('\t')
+            # Parsing based on dbexample.txt (9 fields)
             self.name = parts[0] if len(parts) > 0 else ""
             self.platform = parts[1] if len(parts) > 1 else "nds"
             self.region = parts[2] if len(parts) > 2 else "ANY"
-            self.download_url = parts[3] if len(parts) > 3 else ""
-            self.filename = parts[4] if len(parts) > 4 else ""
-            self.filesize = parts[5] if len(parts) > 5 else "0"
-            self.icon_url = parts[6] if len(parts) > 6 else ""
+            self.version = parts[3] if len(parts) > 3 else ""
+            self.creator = parts[4] if len(parts) > 4 else ""
+            self.download_url = parts[5] if len(parts) > 5 else ""
+            self.filename = parts[6] if len(parts) > 6 else ""
+            self.filesize = parts[7] if len(parts) > 7 else "0"
+            self.icon_url = parts[8] if len(parts) > 8 else ""
         
-        # Genera internal_file_id basato su nome, versione e regione (anche se vuoti)
-        # Fallback a UUID se il nome è vuoto per garantire un ID univoco per il file system
         self.internal_file_id = sanitize_filename(f"{self.name}_{self.version}_{self.region}") if self.name else str(uuid.uuid4())
 
     def to_line(self) -> str:
-        return f"{self.name}\t{self.platform}\t{self.region}\t{self.download_url}\t{self.filename}\t{self.filesize}\t{self.icon_url}"
+        # Format matching dbexample.txt (9 fields)
+        return f"{self.name}\t{self.platform}\t{self.region}\t{self.version}\t{self.creator}\t{self.download_url}\t{self.filename}\t{self.filesize}\t{self.icon_url}"
 
     def to_line_relative(self) -> str:
         relative_download = self.download_url.split('/')[-1] if self.download_url else ""
         relative_icon = self.icon_url.split('/')[-1] if self.icon_url else ""
-        return f"{self.name}\t{self.platform}\t{self.region}\t{relative_download}\t{self.filename}\t{self.filesize}\t{relative_icon}"
+        # Format matching dbexample.txt (9 fields), with relative URLs
+        return f"{self.name}\t{self.platform}\t{self.region}\t{self.version}\t{self.creator}\t{relative_download}\t{self.filename}\t{self.filesize}\t{relative_icon}"
 
 class EditDialog(QDialog):
     def __init__(self, entry: DatabaseEntry, base_url: str, parent=None):
@@ -168,13 +174,12 @@ class EditDialog(QDialog):
         self.entry.creator = self.creator_edit.text().strip()
         self.entry.platform = self.platform_combo.currentText()
         self.entry.region = self.region_combo.currentText()
-        # Aggiorna l'ID interno quando l'entry viene modificata
         self.entry.internal_file_id = sanitize_filename(f"{self.entry.name}_{self.entry.version}_{self.entry.region}")
         return self.entry
     def load_existing_cover(self):
         covers_dir = Path("assets/covers")
         if covers_dir.exists():
-            for ext in ['.png', '.jpg', '.jpeg', '.gif']:
+            for ext in ['.png', '.jpg', '.jpeg', '.gif']: # Check for existing extensions
                 cover_file = covers_dir / f"{self.entry.internal_file_id}{ext}"
                 if cover_file.exists():
                     try:
@@ -193,39 +198,47 @@ class FileManager:
         self.covers_dir = Path("assets/covers")
         self.roms_dir.mkdir(parents=True, exist_ok=True)
         self.covers_dir.mkdir(parents=True, exist_ok=True)
-    def copy_files(self, nds_path: str, file_identifier: str, cover_path: str) -> tuple[str, str]:
-        # Il nome del file ROM fisico sarà solo l'identificatore + estensione originale
-        nds_filename = f"{file_identifier}{Path(nds_path).suffix}"
-        nds_dest = self.roms_dir / nds_filename
+    
+    def copy_files(self, nds_path: str, file_identifier: str, cover_path: str) -> tuple[str, str, str]:
+        # The physical ROM file name will be the identifier + its actual extension
+        rom_ext = Path(nds_path).suffix
+        nds_filename_on_disk = f"{file_identifier}{rom_ext}"
+        nds_dest = self.roms_dir / nds_filename_on_disk
+        
         shutil.copy2(nds_path, nds_dest)
-        rom_url = f"{self.base_url}/assets/roms/{nds_filename}" if self.base_url else f"assets/roms/{nds_filename}"
+        rom_url = f"{self.base_url}/assets/roms/{nds_filename_on_disk}" if self.base_url else f"assets/roms/{nds_filename_on_disk}"
+
         cover_url = ""
         if cover_path and Path(cover_path).exists():
-            cover_ext = Path(cover_path).suffix
-            cover_filename = f"{file_identifier}{cover_ext}"
-            cover_dest = self.covers_dir / cover_filename
+            # Force cover to PNG
+            cover_filename_on_disk = f"{file_identifier}.png"
+            cover_dest = self.covers_dir / cover_filename_on_disk
             try:
                 pil_image = Image.open(cover_path)
                 pil_image.thumbnail((DS_SCREEN_WIDTH, DS_SCREEN_HEIGHT), Image.LANCZOS)
-                pil_image.save(cover_dest)
-                cover_url = f"{self.base_url}/assets/covers/{cover_filename}" if self.base_url else f"assets/covers/{cover_filename}"
+                pil_image.save(cover_dest, format='PNG') # Save as PNG
+                cover_url = f"{self.base_url}/assets/covers/{cover_filename_on_disk}" if self.base_url else f"assets/covers/{cover_filename_on_disk}"
             except Exception as e:
                 print(f"Errore copiando e ridimensionando copertina: {e}")
-        return rom_url, cover_url
+        return rom_url, cover_url, nds_filename_on_disk
+
     def update_cover(self, cover_path: str, file_identifier: str) -> str:
         if not cover_path or not Path(cover_path).exists():
             return ""
+        
+        # Remove old cover files with any extension
         for cover_file in self.covers_dir.glob(f"{file_identifier}.*"):
             if cover_file.suffix.lower() in ['.png', '.jpg', '.jpeg', '.gif', '.bmp']:
                 cover_file.unlink()
-        cover_ext = Path(cover_path).suffix
-        cover_filename = f"{file_identifier}{cover_ext}"
-        cover_dest = self.covers_dir / cover_filename
+        
+        # Force cover to PNG
+        cover_filename_on_disk = f"{file_identifier}.png"
+        cover_dest = self.covers_dir / cover_filename_on_disk
         try:
             pil_image = Image.open(cover_path)
             pil_image.thumbnail((DS_SCREEN_WIDTH, DS_SCREEN_HEIGHT), Image.LANCZOS)
-            pil_image.save(cover_dest)
-            return f"{self.base_url}/assets/covers/{cover_filename}" if self.base_url else f"assets/covers/{cover_filename}"
+            pil_image.save(cover_dest, format='PNG') # Save as PNG
+            return f"{self.base_url}/assets/covers/{cover_filename_on_disk}" if self.base_url else f"assets/covers/{cover_filename_on_disk}"
         except Exception as e:
             print(f"Errore aggiornando e ridimensionando copertina: {e}")
             return ""
@@ -237,7 +250,7 @@ class NDSDatabaseManager(QMainWindow):
         self.url_path = "url.txt"
         self.entries = []
         self.base_url = ""
-        self.current_nds_path = None
+        self.current_nds_path = None # Path to the selected/extracted ROM file
         self.current_cover_path = None
         self.load_base_url()
         self.file_manager = FileManager(self.base_url)
@@ -381,15 +394,59 @@ class NDSDatabaseManager(QMainWindow):
     def load_nds_file(self):
         filepath, _ = QFileDialog.getOpenFileName(self, "Seleziona File NDS", "", "File NDS (*.nds *.dsi *.zip);;Tutti i file (*)")
         if filepath:
-            self.current_nds_path = filepath
-            self.nds_path_label.setText(os.path.basename(filepath))
-            try:
-                nds_info = NDSExtractor.extract_info(filepath)
-                self.name_edit.setText(nds_info.title)
-                self.add_button.setEnabled(True)
-                self.statusBar().showMessage(f"File NDS caricato: {nds_info.filename}")
-            except Exception as e:
-                QMessageBox.warning(self, "Errore", f"Errore leggendo il file NDS: {e}")
+            original_filename = os.path.basename(filepath)
+            self.current_nds_path = None
+
+            if filepath.lower().endswith('.zip'):
+                temp_dir = None
+                try:
+                    temp_dir = Path(tempfile.mkdtemp())
+                    with zipfile.ZipFile(filepath, 'r') as zip_ref:
+                        zip_ref.extractall(temp_dir)
+                    
+                    largest_rom_path = None
+                    largest_rom_size = -1
+
+                    for root, _, files in os.walk(temp_dir):
+                        for file in files:
+                            if file.lower().endswith(('.nds', '.dsi')):
+                                current_file_path = Path(root) / file
+                                current_file_size = os.path.getsize(current_file_path)
+                                if current_file_size > largest_rom_size:
+                                    largest_rom_size = current_file_size
+                                    largest_rom_path = current_file_path
+                    
+                    if largest_rom_path:
+                        self.current_nds_path = str(largest_rom_path)
+                        self.nds_path_label.setText(f"{original_filename} (estratto: {largest_rom_path.name})")
+                        try:
+                            nds_info = NDSExtractor.extract_info(self.current_nds_path)
+                            self.name_edit.setText(nds_info.title)
+                            self.add_button.setEnabled(True)
+                            self.statusBar().showMessage(f"File ZIP caricato ed estratto. ROM trovata: {nds_info.filename}")
+                        except Exception as e:
+                            QMessageBox.warning(self, "Errore", f"Errore leggendo il file NDS estratto: {e}")
+                    else:
+                        QMessageBox.warning(self, "Errore", "Nessun file .nds o .dsi trovato nell'archivio ZIP.")
+                        self.add_button.setEnabled(False)
+                except Exception as e:
+                    QMessageBox.critical(self, "Errore", f"Errore durante l'estrazione o la gestione del file ZIP: {e}")
+                    self.add_button.setEnabled(False)
+                finally:
+                    if temp_dir and temp_dir.exists():
+                        shutil.rmtree(temp_dir)
+            else:
+                self.current_nds_path = filepath
+                self.nds_path_label.setText(original_filename)
+                try:
+                    nds_info = NDSExtractor.extract_info(filepath)
+                    self.name_edit.setText(nds_info.title)
+                    self.add_button.setEnabled(True)
+                    self.statusBar().showMessage(f"File NDS caricato: {nds_info.filename}")
+                except Exception as e:
+                    QMessageBox.warning(self, "Errore", f"Errore leggendo il file NDS: {e}")
+        else:
+            self.add_button.setEnabled(False)
     def load_cover_file(self):
         filepath, _ = QFileDialog.getOpenFileName(self, "Seleziona Copertina", "", "Immagini (*.png *.jpg *.jpeg *.gif *.bmp);;Tutti i file (*)")
         if filepath:
@@ -414,7 +471,9 @@ class NDSDatabaseManager(QMainWindow):
             temp_entry.region = self.region_combo.currentText()
             temp_entry.internal_file_id = sanitize_filename(f"{temp_entry.name}_{temp_entry.version}_{temp_entry.region}")
 
-            rom_url, cover_url = self.file_manager.copy_files(self.current_nds_path, temp_entry.internal_file_id, self.current_cover_path)
+            rom_url, cover_url, actual_rom_filename_on_disk = self.file_manager.copy_files(
+                self.current_nds_path, temp_entry.internal_file_id, self.current_cover_path
+            )
             
             entry = DatabaseEntry()
             entry.name = temp_entry.name
@@ -424,7 +483,7 @@ class NDSDatabaseManager(QMainWindow):
             entry.region = temp_entry.region
             entry.download_url = rom_url
             entry.icon_url = cover_url
-            entry.filename = os.path.basename(self.current_nds_path) # Original filename for database line
+            entry.filename = actual_rom_filename_on_disk # Use the actual filename on disk (internal_file_id.ext)
             entry.filesize = str(os.path.getsize(self.current_nds_path))
             entry.internal_file_id = temp_entry.internal_file_id
 
@@ -457,9 +516,24 @@ class NDSDatabaseManager(QMainWindow):
     
     def refresh_rom_list(self):
         self.rom_list.clear()
+        self.rom_list.setIconSize(QSize(LIST_ICON_SIZE, LIST_ICON_SIZE)) # Set icon size for the list
         for entry in self.entries:
-            self.rom_list.addItem(QListWidgetItem(f"{entry.name}"))
-            self.rom_list.item(self.rom_list.count() - 1).setData(Qt.ItemDataRole.UserRole, entry)
+            item = QListWidgetItem(f"{entry.name}")
+            item.setData(Qt.ItemDataRole.UserRole, entry)
+
+            covers_dir = Path("assets/covers")
+            if covers_dir.exists():
+                # Try to load the PNG cover first, as we force conversion to PNG
+                cover_file = covers_dir / f"{entry.internal_file_id}.png"
+                if cover_file.exists():
+                    try:
+                        pil_image = Image.open(str(cover_file))
+                        pil_image.thumbnail((LIST_ICON_SIZE, LIST_ICON_SIZE), Image.LANCZOS)
+                        pixmap = pil_to_qpixmap(pil_image)
+                        item.setIcon(QIcon(pixmap))
+                    except Exception as e:
+                        print(f"Errore caricando icona per lista {cover_file}: {e}")
+            self.rom_list.addItem(item)
     
     def on_rom_selected(self, item):
         entry = item.data(Qt.ItemDataRole.UserRole)
@@ -473,17 +547,16 @@ class NDSDatabaseManager(QMainWindow):
         cover_loaded = False
         
         if covers_dir.exists():
-            for ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp']:
-                cover_file = covers_dir / f"{entry.internal_file_id}{ext}"
-                if cover_file.exists():
-                    try:
-                        pil_image = Image.open(str(cover_file))
-                        pil_image.thumbnail((DS_SCREEN_WIDTH, DS_SCREEN_HEIGHT), Image.LANCZOS)
-                        self.details_cover.setPixmap(pil_to_qpixmap(pil_image))
-                        cover_loaded = True
-                        break
-                    except Exception as e:
-                        print(f"Errore caricando copertina per dettagli {cover_file}: {e}")
+            # Try to load the PNG cover first, as we force conversion to PNG
+            cover_file = covers_dir / f"{entry.internal_file_id}.png"
+            if cover_file.exists():
+                try:
+                    pil_image = Image.open(str(cover_file))
+                    pil_image.thumbnail((DS_SCREEN_WIDTH, DS_SCREEN_HEIGHT), Image.LANCZOS)
+                    self.details_cover.setPixmap(pil_to_qpixmap(pil_image))
+                    cover_loaded = True
+                except Exception as e:
+                    print(f"Errore caricando copertina per dettagli {cover_file}: {e}")
         
         if not cover_loaded:
             self.details_cover.clear()
@@ -493,7 +566,7 @@ class NDSDatabaseManager(QMainWindow):
 Piattaforma: {entry.platform}
 Regione: {entry.region}
 Versione (interna): {entry.version}
-Creatore (interno): {entry.creator}
+Creatore (interna): {entry.creator}
 Filename ROM (originale): {entry.filename}
 Dimensione ROM: {entry.filesize} bytes
 URL Download ROM: {entry.download_url}
@@ -515,7 +588,14 @@ ID Interno (per file): {entry.internal_file_id}"""
         if dialog.exec() == QDialog.DialogCode.Accepted:
             updated_entry = dialog.get_updated_entry()
             
-            if dialog.cover_path and dialog.cover_path != self.get_existing_cover_path(updated_entry.internal_file_id):
+            # If cover path is provided and it's different from the existing one, update it
+            if dialog.cover_path: # Check if a new cover was selected
+                # Delete old cover file if it exists (with any extension)
+                for cover_file in Path("assets/covers").glob(f"{updated_entry.internal_file_id}.*"):
+                    if cover_file.suffix.lower() in ['.png', '.jpg', '.jpeg', '.gif', '.bmp']:
+                        cover_file.unlink()
+                
+                # Copy and convert new cover to PNG
                 cover_url = self.file_manager.update_cover(dialog.cover_path, updated_entry.internal_file_id)
                 if cover_url:
                     updated_entry.icon_url = cover_url
@@ -528,7 +608,12 @@ ID Interno (per file): {entry.internal_file_id}"""
     def get_existing_cover_path(self, file_identifier: str) -> Optional[str]:
         covers_dir = Path("assets/covers")
         if covers_dir.exists():
-            for ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp']:
+            # Check for PNG first as we convert to PNG
+            cover_file = covers_dir / f"{file_identifier}.png"
+            if cover_file.exists():
+                return str(cover_file)
+            # Fallback to other extensions if PNG not found (for old entries)
+            for ext in ['.jpg', '.jpeg', '.gif', '.bmp']:
                 cover_file = covers_dir / f"{file_identifier}{ext}"
                 if cover_file.exists():
                     return str(cover_file)
@@ -580,10 +665,12 @@ ID Interno (per file): {entry.internal_file_id}"""
                 if db_version_line != "1":
                     QMessageBox.warning(self, "Attenzione", f"Versione database non riconosciuta: {db_version_line}. Potrebbero esserci problemi di compatibilità.")
 
-                for line in lines[1:]:
-                    line = line.strip()
-                    if line and not line.startswith('#'):
-                        self.entries.append(DatabaseEntry(line))
+                # Salta la riga della versione e la riga vuota con il tab
+                if len(lines) > 2:
+                    for line in lines[2:]:
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            self.entries.append(DatabaseEntry(line))
                 
                 self.refresh_rom_list()
                 self.statusBar().showMessage(f"Database caricato: {len(self.entries)} entries")
@@ -593,6 +680,7 @@ ID Interno (per file): {entry.internal_file_id}"""
             try:
                 with open(self.database_path, 'w', encoding='utf-8') as f:
                     f.write("1\n")
+                    f.write("\t\n")
                 self.statusBar().showMessage(f"Database '{self.database_path}' creato.")
             except Exception as e:
                 QMessageBox.warning(self, "Errore", f"Errore creando il database: {e}")
@@ -601,12 +689,14 @@ ID Interno (per file): {entry.internal_file_id}"""
         try:
             with open(self.database_path, 'w', encoding='utf-8') as f:
                 f.write("1\n")
+                f.write("\t\n")
                 for entry in self.entries:
                     f.write(entry.to_line() + '\n')
             
             relative_path = self.database_path.replace('.txt', '_relative.txt')
             with open(relative_path, 'w', encoding='utf-8') as f:
                 f.write("1\n")
+                f.write("\t\n")
                 for entry in self.entries:
                     f.write(entry.to_line_relative() + '\n')
             
