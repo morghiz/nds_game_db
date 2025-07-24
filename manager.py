@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional, List
 from dataclasses import dataclass
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QTextEdit, QFileDialog, QMessageBox, QGroupBox, QGridLayout, QComboBox, QListWidget, QListWidgetItem, QSplitter, QTabWidget, QDialog, QDialogButtonBox
-from PyQt6.QtCore import Qt, QSize # Importa QSize
+from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QPixmap, QIcon
 from PIL import Image
 from io import BytesIO
@@ -179,17 +179,16 @@ class EditDialog(QDialog):
     def load_existing_cover(self):
         covers_dir = Path("assets/covers")
         if covers_dir.exists():
-            for ext in ['.png', '.jpg', '.jpeg', '.gif']: # Check for existing extensions
-                cover_file = covers_dir / f"{self.entry.internal_file_id}{ext}"
-                if cover_file.exists():
-                    try:
-                        pil_image = Image.open(str(cover_file))
-                        pil_image.thumbnail((DS_SCREEN_WIDTH, DS_SCREEN_HEIGHT), Image.LANCZOS)
-                        self.cover_label.setPixmap(pil_to_qpixmap(pil_image))
-                        self.cover_path = str(cover_file)
-                        break
-                    except Exception as e:
-                        print(f"Errore caricando copertina esistente {cover_file}: {e}")
+            # Check for PNG first as we force conversion to PNG
+            cover_file = covers_dir / f"{self.entry.internal_file_id}.png"
+            if cover_file.exists():
+                try:
+                    pil_image = Image.open(str(cover_file))
+                    pil_image.thumbnail((DS_SCREEN_WIDTH, DS_SCREEN_HEIGHT), Image.LANCZOS)
+                    self.cover_label.setPixmap(pil_to_qpixmap(pil_image))
+                    self.cover_path = str(cover_file)
+                except Exception as e:
+                    print(f"Errore caricando copertina esistente {cover_file}: {e}")
 
 class FileManager:
     def __init__(self, base_url: str = ""):
@@ -200,7 +199,6 @@ class FileManager:
         self.covers_dir.mkdir(parents=True, exist_ok=True)
     
     def copy_files(self, nds_path: str, file_identifier: str, cover_path: str) -> tuple[str, str, str]:
-        # The physical ROM file name will be the identifier + its actual extension
         rom_ext = Path(nds_path).suffix
         nds_filename_on_disk = f"{file_identifier}{rom_ext}"
         nds_dest = self.roms_dir / nds_filename_on_disk
@@ -210,13 +208,14 @@ class FileManager:
 
         cover_url = ""
         if cover_path and Path(cover_path).exists():
-            # Force cover to PNG
             cover_filename_on_disk = f"{file_identifier}.png"
             cover_dest = self.covers_dir / cover_filename_on_disk
             try:
                 pil_image = Image.open(cover_path)
                 pil_image.thumbnail((DS_SCREEN_WIDTH, DS_SCREEN_HEIGHT), Image.LANCZOS)
-                pil_image.save(cover_dest, format='PNG') # Save as PNG
+                # Convert to P mode (palette-based) and quantize to 256 colors for DS compatibility
+                pil_image = pil_image.convert("P", palette=Image.Palette.ADAPTIVE, colors=256)
+                pil_image.save(cover_dest, format='PNG')
                 cover_url = f"{self.base_url}/assets/covers/{cover_filename_on_disk}" if self.base_url else f"assets/covers/{cover_filename_on_disk}"
             except Exception as e:
                 print(f"Errore copiando e ridimensionando copertina: {e}")
@@ -226,18 +225,18 @@ class FileManager:
         if not cover_path or not Path(cover_path).exists():
             return ""
         
-        # Remove old cover files with any extension
         for cover_file in self.covers_dir.glob(f"{file_identifier}.*"):
             if cover_file.suffix.lower() in ['.png', '.jpg', '.jpeg', '.gif', '.bmp']:
                 cover_file.unlink()
         
-        # Force cover to PNG
         cover_filename_on_disk = f"{file_identifier}.png"
         cover_dest = self.covers_dir / cover_filename_on_disk
         try:
             pil_image = Image.open(cover_path)
             pil_image.thumbnail((DS_SCREEN_WIDTH, DS_SCREEN_HEIGHT), Image.LANCZOS)
-            pil_image.save(cover_dest, format='PNG') # Save as PNG
+            # Convert to P mode (palette-based) and quantize to 256 colors for DS compatibility
+            pil_image = pil_image.convert("P", palette=Image.Palette.ADAPTIVE, colors=256)
+            pil_image.save(cover_dest, format='PNG')
             return f"{self.base_url}/assets/covers/{cover_filename_on_disk}" if self.base_url else f"assets/covers/{cover_filename_on_disk}"
         except Exception as e:
             print(f"Errore aggiornando e ridimensionando copertina: {e}")
@@ -250,7 +249,7 @@ class NDSDatabaseManager(QMainWindow):
         self.url_path = "url.txt"
         self.entries = []
         self.base_url = ""
-        self.current_nds_path = None # Path to the selected/extracted ROM file
+        self.current_nds_path = None
         self.current_cover_path = None
         self.load_base_url()
         self.file_manager = FileManager(self.base_url)
@@ -516,14 +515,13 @@ class NDSDatabaseManager(QMainWindow):
     
     def refresh_rom_list(self):
         self.rom_list.clear()
-        self.rom_list.setIconSize(QSize(LIST_ICON_SIZE, LIST_ICON_SIZE)) # Set icon size for the list
+        self.rom_list.setIconSize(QSize(LIST_ICON_SIZE, LIST_ICON_SIZE))
         for entry in self.entries:
             item = QListWidgetItem(f"{entry.name}")
             item.setData(Qt.ItemDataRole.UserRole, entry)
 
             covers_dir = Path("assets/covers")
             if covers_dir.exists():
-                # Try to load the PNG cover first, as we force conversion to PNG
                 cover_file = covers_dir / f"{entry.internal_file_id}.png"
                 if cover_file.exists():
                     try:
@@ -547,7 +545,6 @@ class NDSDatabaseManager(QMainWindow):
         cover_loaded = False
         
         if covers_dir.exists():
-            # Try to load the PNG cover first, as we force conversion to PNG
             cover_file = covers_dir / f"{entry.internal_file_id}.png"
             if cover_file.exists():
                 try:
@@ -588,14 +585,11 @@ ID Interno (per file): {entry.internal_file_id}"""
         if dialog.exec() == QDialog.DialogCode.Accepted:
             updated_entry = dialog.get_updated_entry()
             
-            # If cover path is provided and it's different from the existing one, update it
-            if dialog.cover_path: # Check if a new cover was selected
-                # Delete old cover file if it exists (with any extension)
+            if dialog.cover_path:
                 for cover_file in Path("assets/covers").glob(f"{updated_entry.internal_file_id}.*"):
                     if cover_file.suffix.lower() in ['.png', '.jpg', '.jpeg', '.gif', '.bmp']:
                         cover_file.unlink()
                 
-                # Copy and convert new cover to PNG
                 cover_url = self.file_manager.update_cover(dialog.cover_path, updated_entry.internal_file_id)
                 if cover_url:
                     updated_entry.icon_url = cover_url
@@ -608,15 +602,9 @@ ID Interno (per file): {entry.internal_file_id}"""
     def get_existing_cover_path(self, file_identifier: str) -> Optional[str]:
         covers_dir = Path("assets/covers")
         if covers_dir.exists():
-            # Check for PNG first as we convert to PNG
             cover_file = covers_dir / f"{file_identifier}.png"
             if cover_file.exists():
                 return str(cover_file)
-            # Fallback to other extensions if PNG not found (for old entries)
-            for ext in ['.jpg', '.jpeg', '.gif', '.bmp']:
-                cover_file = covers_dir / f"{file_identifier}{ext}"
-                if cover_file.exists():
-                    return str(cover_file)
         return None
     
     def delete_selected_rom(self):
