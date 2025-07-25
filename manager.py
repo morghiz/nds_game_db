@@ -12,7 +12,7 @@ import re
 import uuid
 import zipfile
 import tempfile
-import requests # Importa requests per le richieste HTTP
+import requests
 
 DS_SCREEN_WIDTH = 256
 DS_SCREEN_HEIGHT = 192
@@ -39,8 +39,9 @@ class NDSInfo:
     filename: str
     filesize: int
     game_id: str = ""
-    creator: str = ""
-    version: str = ""
+    maker_code: str = ""  # Codice del produttore (es. Nintendo, Capcom)
+    rom_version: int = 0  # Versione della ROM (es. 0, 1, 2)
+    region_from_rom: str = "ANY"  # Regione estratta dalla ROM (es. JPN, USA, EUR)
 
 class NDSExtractor:
     @staticmethod
@@ -48,30 +49,54 @@ class NDSExtractor:
         filename = os.path.basename(filepath)
         filesize = os.path.getsize(filepath)
         with open(filepath, 'rb') as f:
-            header = f.read(0x200)
-            title_bytes = header[0x00:0x0C]
+            header = f.read(0x200) # Leggi l'intero header
+
+            title_bytes = header[0x00:0x0C] #
             title = title_bytes.decode('ascii', errors='ignore').strip('\x00')
             if not title:
                 title = os.path.splitext(filename)[0]
             
-            game_id_bytes = header[0x0C:0x10]
+            game_id_bytes = header[0x0C:0x10] #
             game_id = game_id_bytes.decode('ascii', errors='ignore').strip('\x00')
 
-            return NDSInfo(title=title, icon=None, filename=filename, filesize=filesize, game_id=game_id)
+            maker_code_bytes = header[0x12:0x14] #
+            maker_code = maker_code_bytes.decode('ascii', errors='ignore').strip('\x00')
+
+            rom_version_byte = header[0x1E] #
+            rom_version = int(rom_version_byte)
+
+            region_id_byte = header[0x10] #
+            region_map = {
+                0x00: "JPN", # Japan
+                0x01: "USA", # USA
+                0x02: "EUR", # Europe
+                0x03: "AUS", # Australia (often grouped with EUR)
+                0x04: "KOR", # Korea
+                0x05: "CHN", # China
+                0x06: "HKG", # Hong Kong
+                0x07: "TWN", # Taiwan
+                0x08: "WORLD", # World/Multi-region
+            }
+            region_from_rom = region_map.get(region_id_byte, "ANY") # "ANY" for unknown
+
+            return NDSInfo(title=title, icon=None, filename=filename, filesize=filesize, 
+                           game_id=game_id, maker_code=maker_code, rom_version=rom_version, 
+                           region_from_rom=region_from_rom)
 
 class DatabaseEntry:
     def __init__(self, line: str = ""):
         self.name = ""
         self.platform = "nds"
-        self.region = "ANY"
-        self.version = ""
-        self.creator = ""
+        self.region = "ANY" # Regione selezionata dall'utente
+        self.version = "" # Versione (dalla ROM)
+        self.creator = "" # Creatore (dalla ROM)
         self.download_url = ""
         self.filename = ""
         self.filesize = "0"
         self.icon_url = ""
         self.internal_file_id = ""
         self.game_id = ""
+        self.extracted_region_from_rom = "ANY" # Nuova: Regione estratta dalla ROM
 
         if line.strip():
             parts = line.strip().split('\t')
@@ -85,29 +110,35 @@ class DatabaseEntry:
             self.filesize = parts[7] if len(parts) > 7 else "0"
             self.icon_url = parts[8] if len(parts) > 8 else ""
             self.game_id = parts[9] if len(parts) > 9 else ""
-        
+            self.extracted_region_from_rom = parts[10] if len(parts) > 10 else "ANY" # Nuovo campo
+
         self.internal_file_id = sanitize_filename(f"{self.name}_{self.version}_{self.region}") if self.name else str(uuid.uuid4())
 
     def to_line(self) -> str:
-        return f"{self.name}\t{self.platform}\t{self.region}\t{self.version}\t{self.creator}\t{self.download_url}\t{self.filename}\t{self.filesize}\t{self.icon_url}\t{self.game_id}"
+        # Aggiunto extracted_region_from_rom come 11° campo
+        return f"{self.name}\t{self.platform}\t{self.region}\t{self.version}\t{self.creator}\t{self.download_url}\t{self.filename}\t{self.filesize}\t{self.icon_url}\t{self.game_id}\t{self.extracted_region_from_rom}"
 
     def to_line_relative(self) -> str:
         relative_download = self.download_url.split('/')[-1] if self.download_url and not self.download_url.startswith('http') else self.download_url
         relative_icon = self.icon_url.split('/')[-1] if self.icon_url and not self.icon_url.startswith('http') else self.icon_url
-        return f"{self.name}\t{self.platform}\t{self.region}\t{self.version}\t{self.creator}\t{relative_download}\t{self.filename}\t{self.filesize}\t{relative_icon}\t{self.game_id}"
+        # Aggiunto extracted_region_from_rom come 11° campo
+        return f"{self.name}\t{self.platform}\t{self.region}\t{self.version}\t{self.creator}\t{relative_download}\t{self.filename}\t{self.filesize}\t{relative_icon}\t{self.game_id}\t{self.extracted_region_from_rom}"
+
 
 class EditDialog(QDialog):
     def __init__(self, entry: DatabaseEntry, base_url: str, parent=None):
         super().__init__(parent)
         self.entry = entry
         self.base_url = base_url
-        self.cover_path = None # Può essere un URL remoto o un percorso locale
+        self.cover_path = self.entry.icon_url # Inizializza con l'URL esistente
         self.init_ui()
         self.load_entry_data()
+
     def init_ui(self):
         self.setWindowTitle("Modifica Entry")
-        self.setFixedSize(500, 450)
+        self.setFixedSize(500, 500) # Aumentata l'altezza per nuovi campi
         layout = QVBoxLayout(self)
+
         cover_group = QGroupBox("Copertina")
         cover_layout = QHBoxLayout(cover_group)
         self.cover_label = QLabel()
@@ -127,30 +158,44 @@ class EditDialog(QDialog):
         cover_buttons.addWidget(self.remove_cover_btn)
         cover_layout.addLayout(cover_buttons)
         layout.addWidget(cover_group)
+
         fields_group = QGroupBox("Informazioni")
         fields_layout = QGridLayout(fields_group)
-        fields_layout.addWidget(QLabel("Nome:"), 0, 0)
+        
+        row = 0
+        fields_layout.addWidget(QLabel("Nome:"), row, 0)
         self.name_edit = QLineEdit()
-        fields_layout.addWidget(self.name_edit, 0, 1)
-        fields_layout.addWidget(QLabel("Versione:"), 1, 0)
+        fields_layout.addWidget(self.name_edit, row, 1); row += 1
+
+        fields_layout.addWidget(QLabel("Versione:"), row, 0)
         self.version_edit = QLineEdit()
-        fields_layout.addWidget(self.version_edit, 1, 1)
-        fields_layout.addWidget(QLabel("Creatore:"), 2, 0)
+        fields_layout.addWidget(self.version_edit, row, 1); row += 1
+
+        fields_layout.addWidget(QLabel("Creatore:"), row, 0)
         self.creator_edit = QLineEdit()
-        fields_layout.addWidget(self.creator_edit, 2, 1)
-        fields_layout.addWidget(QLabel("Piattaforma:"), 3, 0)
+        fields_layout.addWidget(self.creator_edit, row, 1); row += 1
+
+        fields_layout.addWidget(QLabel("Piattaforma:"), row, 0)
         self.platform_combo = QComboBox()
         self.platform_combo.addItems(["nds", "dsi"])
-        fields_layout.addWidget(self.platform_combo, 3, 1)
-        fields_layout.addWidget(QLabel("Regione:"), 4, 0)
+        fields_layout.addWidget(self.platform_combo, row, 1); row += 1
+
+        fields_layout.addWidget(QLabel("Regione (Utente):"), row, 0)
         self.region_combo = QComboBox()
         self.region_combo.addItems(["ANY", "EUR", "USA", "JPN"])
-        fields_layout.addWidget(self.region_combo, 4, 1)
-        fields_layout.addWidget(QLabel("Game ID:"), 5, 0)
+        fields_layout.addWidget(self.region_combo, row, 1); row += 1
+
+        fields_layout.addWidget(QLabel("Game ID:"), row, 0)
         self.game_id_edit = QLineEdit()
         self.game_id_edit.setReadOnly(True)
-        fields_layout.addWidget(self.game_id_edit, 5, 1)
+        fields_layout.addWidget(self.game_id_edit, row, 1); row += 1
+
+        fields_layout.addWidget(QLabel("Regione (da ROM):"), row, 0)
+        self.extracted_region_label = QLabel() # Solo visualizzazione
+        fields_layout.addWidget(self.extracted_region_label, row, 1); row += 1
+
         layout.addWidget(fields_group)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -160,16 +205,31 @@ class EditDialog(QDialog):
         if path_or_url.startswith('http'):
             try:
                 pixmap = QPixmap()
-                if pixmap.load(path_or_url):
+                # Aggiungi un timeout per le richieste HTTP
+                response = requests.get(path_or_url, timeout=5)
+                response.raise_for_status() # Lancia un errore per codici di stato HTTP errati
+                pixmap.loadFromData(response.content)
+
+                if not pixmap.isNull():
                     pixmap = pixmap.scaled(DS_SCREEN_WIDTH // 2, DS_SCREEN_HEIGHT // 2, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                     self.cover_label.setPixmap(pixmap)
                     self.cover_path = path_or_url
                 else:
                     self.cover_label.clear()
                     self.cover_label.setText("Errore caricamento remoto")
-            except Exception as e:
+                    self.cover_path = ""
+            except requests.exceptions.Timeout:
+                self.cover_label.clear()
+                self.cover_label.setText("Timeout caricamento remoto")
+                self.cover_path = ""
+            except requests.exceptions.RequestException as e:
                 self.cover_label.clear()
                 self.cover_label.setText(f"Errore caricamento remoto: {e}")
+                self.cover_path = ""
+            except Exception as e:
+                self.cover_label.clear()
+                self.cover_label.setText(f"Errore generico caricamento remoto: {e}")
+                self.cover_path = ""
         elif Path(path_or_url).exists():
             try:
                 pil_image = Image.open(path_or_url)
@@ -179,23 +239,29 @@ class EditDialog(QDialog):
             except Exception as e:
                 self.cover_label.clear()
                 self.cover_label.setText(f"Errore caricamento locale: {e}")
+                self.cover_path = ""
         else:
             self.cover_label.clear()
             self.cover_label.setText("Nessuna Copertina")
+            self.cover_path = ""
 
 
     def load_entry_data(self):
         self.name_edit.setText(self.entry.name)
         self.version_edit.setText(self.entry.version)
         self.creator_edit.setText(self.entry.creator)
+        
         platform_index = self.platform_combo.findText(self.entry.platform)
         if platform_index >= 0:
             self.platform_combo.setCurrentIndex(platform_index)
+        
         region_index = self.region_combo.findText(self.entry.region)
         if region_index >= 0:
             self.region_combo.setCurrentIndex(region_index)
-        self.game_id_edit.setText(self.entry.game_id)
         
+        self.game_id_edit.setText(self.entry.game_id)
+        self.extracted_region_label.setText(self.entry.extracted_region_from_rom) # Mostra la regione estratta
+
         if self.entry.icon_url:
             self._load_image_to_label(self.entry.icon_url)
         else:
@@ -225,14 +291,14 @@ class EditDialog(QDialog):
                         found_url = url
                         break
                 except requests.exceptions.RequestException:
-                    continue # Continua con la prossima lingua in caso di errore di rete
+                    continue
             
             if found_url:
                 self._load_image_to_label(found_url)
                 QMessageBox.information(self, "Successo", f"Copertina GameTDB trovata e caricata: {found_url}")
             else:
                 QMessageBox.warning(self, "Non Trovata", "Nessuna copertina trovata su GameTDB per questo Game ID. Selezionane una manualmente.")
-                self.remove_cover() # Pulisci la preview se non trovata
+                self.remove_cover()
         finally:
             QApplication.restoreOverrideCursor()
 
@@ -248,9 +314,9 @@ class EditDialog(QDialog):
         self.entry.creator = self.creator_edit.text().strip()
         self.entry.platform = self.platform_combo.currentText()
         self.entry.region = self.region_combo.currentText()
-        # Il game_id non viene modificato qui, poiché dovrebbe essere fisso dalla ROM
         self.entry.internal_file_id = sanitize_filename(f"{self.entry.name}_{self.entry.version}_{self.entry.region}")
         self.entry.icon_url = self.cover_path # Aggiorna l'URL della copertina
+        # extracted_region_from_rom e game_id non vengono modificati qui, sono solo dalla ROM
         return self.entry
 
 class FileManager:
@@ -330,6 +396,7 @@ class NDSDatabaseManager(QMainWindow):
         self.tab_widget.addTab(self.view_tab, "Gestisci ROM")
         self.init_view_tab()
         self.statusBar().showMessage("Pronto")
+
     def init_add_tab(self):
         layout = QVBoxLayout(self.add_tab)
         url_group = QGroupBox("Configurazione URL")
@@ -370,30 +437,43 @@ class NDSDatabaseManager(QMainWindow):
         self.cover_preview.setText("Nessuna Copertina")
         preview_layout.addWidget(self.cover_preview)
         layout.addWidget(preview_group)
+
         info_group = QGroupBox("Informazioni ROM")
         info_layout = QGridLayout(info_group)
-        info_layout.addWidget(QLabel("Nome:"), 0, 0)
+        row = 0
+        info_layout.addWidget(QLabel("Nome:"), row, 0)
         self.name_edit = QLineEdit()
-        info_layout.addWidget(self.name_edit, 0, 1)
-        info_layout.addWidget(QLabel("Versione:"), 1, 0)
+        info_layout.addWidget(self.name_edit, row, 1); row += 1
+
+        info_layout.addWidget(QLabel("Versione (da ROM):"), row, 0)
         self.version_edit = QLineEdit()
-        info_layout.addWidget(self.version_edit, 1, 1)
-        info_layout.addWidget(QLabel("Creatore:"), 2, 0)
+        info_layout.addWidget(self.version_edit, row, 1); row += 1
+
+        info_layout.addWidget(QLabel("Creatore (da ROM):"), row, 0)
         self.creator_edit = QLineEdit()
-        info_layout.addWidget(self.creator_edit, 2, 1)
-        info_layout.addWidget(QLabel("Piattaforma:"), 3, 0)
+        info_layout.addWidget(self.creator_edit, row, 1); row += 1
+
+        info_layout.addWidget(QLabel("Piattaforma:"), row, 0)
         self.platform_combo = QComboBox()
         self.platform_combo.addItems(["nds", "dsi"])
-        info_layout.addWidget(self.platform_combo, 3, 1)
-        info_layout.addWidget(QLabel("Regione:"), 4, 0)
+        info_layout.addWidget(self.platform_combo, row, 1); row += 1
+
+        info_layout.addWidget(QLabel("Regione (Utente):"), row, 0)
         self.region_combo = QComboBox()
         self.region_combo.addItems(["ANY", "EUR", "USA", "JPN"])
-        info_layout.addWidget(self.region_combo, 4, 1)
-        info_layout.addWidget(QLabel("Game ID:"), 5, 0)
+        info_layout.addWidget(self.region_combo, row, 1); row += 1
+
+        info_layout.addWidget(QLabel("Game ID:"), row, 0)
         self.game_id_edit = QLineEdit()
         self.game_id_edit.setReadOnly(True)
-        info_layout.addWidget(self.game_id_edit, 5, 1)
+        info_layout.addWidget(self.game_id_edit, row, 1); row += 1
+
+        info_layout.addWidget(QLabel("Regione (da ROM):"), row, 0)
+        self.extracted_region_label_add_tab = QLabel("N/A") # Solo visualizzazione
+        info_layout.addWidget(self.extracted_region_label_add_tab, row, 1); row += 1
+
         layout.addWidget(info_group)
+
         button_layout = QHBoxLayout()
         self.add_button = QPushButton("Aggiungi al Database")
         self.add_button.clicked.connect(self.add_to_database)
@@ -403,6 +483,7 @@ class NDSDatabaseManager(QMainWindow):
         self.clear_button.clicked.connect(self.clear_fields)
         button_layout.addWidget(self.clear_button)
         layout.addLayout(button_layout)
+
     def init_view_tab(self):
         layout = QHBoxLayout(self.view_tab)
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -446,6 +527,7 @@ class NDSDatabaseManager(QMainWindow):
         self.refresh_button.clicked.connect(self.refresh_rom_list)
         global_buttons.addWidget(self.refresh_button)
         layout.addLayout(global_buttons)
+
     def update_base_url(self):
         self.base_url = self.base_url_edit.text().strip()
         self.file_manager = FileManager(self.base_url)
@@ -459,7 +541,12 @@ class NDSDatabaseManager(QMainWindow):
         if path_or_url.startswith('http'):
             try:
                 pixmap = QPixmap()
-                if pixmap.load(path_or_url):
+                # Aggiungi un timeout per le richieste HTTP
+                response = requests.get(path_or_url, timeout=5)
+                response.raise_for_status()
+                pixmap.loadFromData(response.content)
+
+                if not pixmap.isNull():
                     pixmap = pixmap.scaled(DS_SCREEN_WIDTH // 2, DS_SCREEN_HEIGHT // 2, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                     self.cover_preview.setPixmap(pixmap)
                     self.cover_path_label.setText(path_or_url)
@@ -469,11 +556,21 @@ class NDSDatabaseManager(QMainWindow):
                     self.cover_preview.setText("Errore caricamento remoto")
                     self.cover_path_label.setText("Errore caricamento copertina remota")
                     self.statusBar().showMessage("Errore caricamento copertina remota.")
-            except Exception as e:
+            except requests.exceptions.Timeout:
+                self.cover_preview.clear()
+                self.cover_preview.setText("Timeout caricamento remoto")
+                self.cover_path_label.setText("Timeout caricamento copertina remota")
+                self.statusBar().showMessage("Timeout caricamento copertina remota.")
+            except requests.exceptions.RequestException as e:
                 self.cover_preview.clear()
                 self.cover_preview.setText(f"Errore: {e}")
                 self.cover_path_label.setText("Errore caricamento copertina remota")
                 self.statusBar().showMessage(f"Errore caricamento copertina remota: {e}")
+            except Exception as e:
+                self.cover_preview.clear()
+                self.cover_preview.setText(f"Errore generico: {e}")
+                self.cover_path_label.setText("Errore caricamento copertina remota")
+                self.statusBar().showMessage(f"Errore generico caricamento copertina remota: {e}")
         elif Path(path_or_url).exists():
             try:
                 pil_image = Image.open(path_or_url)
@@ -499,18 +596,18 @@ class NDSDatabaseManager(QMainWindow):
             original_filename = os.path.basename(filepath)
             self.current_nds_path = None
             extracted_rom_path = None
+            self.temp_zip_extraction_dir = None # Inizializza a None
 
             if filepath.lower().endswith('.zip'):
-                temp_dir = None
                 try:
-                    temp_dir = Path(tempfile.mkdtemp())
+                    self.temp_zip_extraction_dir = Path(tempfile.mkdtemp())
                     with zipfile.ZipFile(filepath, 'r') as zip_ref:
-                        zip_ref.extractall(temp_dir)
+                        zip_ref.extractall(self.temp_zip_extraction_dir)
                     
                     largest_rom_path = None
                     largest_rom_size = -1
 
-                    for root, _, files in os.walk(temp_dir):
+                    for root, _, files in os.walk(self.temp_zip_extraction_dir):
                         for file in files:
                             if file.lower().endswith(('.nds', '.dsi')):
                                 current_file_path = Path(root) / file
@@ -525,14 +622,17 @@ class NDSDatabaseManager(QMainWindow):
                     else:
                         QMessageBox.warning(self, "Errore", "Nessun file .nds o .dsi trovato nell'archivio ZIP.")
                         self.add_button.setEnabled(False)
+                        if self.temp_zip_extraction_dir and self.temp_zip_extraction_dir.exists():
+                            shutil.rmtree(self.temp_zip_extraction_dir)
+                            self.temp_zip_extraction_dir = None
                         return
                 except Exception as e:
                     QMessageBox.critical(self, "Errore", f"Errore durante l'estrazione o la gestione del file ZIP: {e}")
                     self.add_button.setEnabled(False)
+                    if self.temp_zip_extraction_dir and self.temp_zip_extraction_dir.exists():
+                        shutil.rmtree(self.temp_zip_extraction_dir)
+                        self.temp_zip_extraction_dir = None
                     return
-                finally:
-                    # Non rimuovere temp_dir qui, la ROM estratta deve persistere per l'aggiunta
-                    self.temp_zip_extraction_dir = temp_dir # Salva il riferimento per eliminarlo dopo
             else:
                 extracted_rom_path = filepath
                 self.nds_path_label.setText(original_filename)
@@ -542,10 +642,20 @@ class NDSDatabaseManager(QMainWindow):
                 nds_info = NDSExtractor.extract_info(self.current_nds_path)
                 self.name_edit.setText(nds_info.title)
                 self.game_id_edit.setText(nds_info.game_id)
+                self.creator_edit.setText(nds_info.maker_code) # Imposta il creatore
+                self.version_edit.setText(str(nds_info.rom_version)) # Imposta la versione
+                self.extracted_region_label_add_tab.setText(nds_info.region_from_rom) # Imposta la regione dalla ROM
+
+                # Cerca di impostare la regione utente sulla base della regione della ROM
+                region_index = self.region_combo.findText(nds_info.region_from_rom)
+                if region_index >= 0:
+                    self.region_combo.setCurrentIndex(region_index)
+                else:
+                    self.region_combo.setCurrentIndex(self.region_combo.findText("ANY"))
+
                 self.add_button.setEnabled(True)
                 self.statusBar().showMessage(f"File NDS caricato: {nds_info.filename}")
                 
-                # Prova a cercare la copertina su GameTDB automaticamente
                 self.current_cover_path = "" # Resetta la copertina corrente
                 if nds_info.game_id:
                     self.search_gametdb_cover(auto_search=True)
@@ -620,7 +730,11 @@ class NDSDatabaseManager(QMainWindow):
             temp_entry = DatabaseEntry()
             temp_entry.name = self.name_edit.text().strip() or "ROM Senza Nome"
             temp_entry.version = self.version_edit.text().strip()
+            temp_entry.creator = self.creator_edit.text().strip() # Prendi il creatore dal campo di testo
             temp_entry.region = self.region_combo.currentText()
+            temp_entry.game_id = self.game_id_edit.text().strip()
+            temp_entry.extracted_region_from_rom = self.extracted_region_label_add_tab.text() # Prendi la regione dalla ROM
+
             temp_entry.internal_file_id = sanitize_filename(f"{temp_entry.name}_{temp_entry.version}_{temp_entry.region}")
 
             rom_url, actual_rom_filename_on_disk = self.file_manager.copy_rom_file(
@@ -639,7 +753,7 @@ class NDSDatabaseManager(QMainWindow):
             entry = DatabaseEntry()
             entry.name = temp_entry.name
             entry.version = temp_entry.version
-            entry.creator = self.creator_edit.text().strip()
+            entry.creator = temp_entry.creator
             entry.platform = self.platform_combo.currentText()
             entry.region = temp_entry.region
             entry.download_url = rom_url
@@ -647,7 +761,8 @@ class NDSDatabaseManager(QMainWindow):
             entry.filename = actual_rom_filename_on_disk
             entry.filesize = str(os.path.getsize(self.current_nds_path))
             entry.internal_file_id = temp_entry.internal_file_id
-            entry.game_id = self.game_id_edit.text().strip()
+            entry.game_id = temp_entry.game_id
+            entry.extracted_region_from_rom = temp_entry.extracted_region_from_rom
 
             self.entries.append(entry)
             self.clear_fields()
@@ -657,15 +772,18 @@ class NDSDatabaseManager(QMainWindow):
             QMessageBox.information(self, "Successo", f"ROM '{entry.name}' aggiunta con successo!")
             
         except Exception as e:
-            QMessageBox.critical(self, "Errore", f"Errore aggiungendo la ROM: {e}")
+            QMessageBox.critical(self.add_tab, "Errore", f"Errore aggiungendo la ROM: {e}") # Usato self.add_tab come parent
         finally:
-            if hasattr(self, 'temp_zip_extraction_dir') and self.temp_zip_extraction_dir.exists():
+            if hasattr(self, 'temp_zip_extraction_dir') and self.temp_zip_extraction_dir and self.temp_zip_extraction_dir.exists():
                 shutil.rmtree(self.temp_zip_extraction_dir)
-                del self.temp_zip_extraction_dir
+                self.temp_zip_extraction_dir = None
     
     def clear_fields(self):
         self.current_nds_path = None
         self.current_cover_path = None
+        if hasattr(self, 'temp_zip_extraction_dir') and self.temp_zip_extraction_dir and self.temp_zip_extraction_dir.exists():
+            shutil.rmtree(self.temp_zip_extraction_dir)
+            self.temp_zip_extraction_dir = None
         
         self.nds_path_label.setText("Nessun file selezionato")
         self.cover_path_label.setText("Nessuna copertina")
@@ -678,6 +796,7 @@ class NDSDatabaseManager(QMainWindow):
         self.platform_combo.setCurrentIndex(0)
         self.region_combo.setCurrentIndex(0)
         self.game_id_edit.clear()
+        self.extracted_region_label_add_tab.setText("N/A") # Pulisci anche questo
         
         self.add_button.setEnabled(False)
     
@@ -691,9 +810,13 @@ class NDSDatabaseManager(QMainWindow):
             if entry.icon_url:
                 pixmap = QPixmap()
                 if entry.icon_url.startswith('http'):
+                    # Load remote image directly for list preview
+                    # Use a QNetworkAccessManager if this causes blocking UI, but for small icons it's often fine
                     if pixmap.load(entry.icon_url):
                         pixmap = pixmap.scaled(LIST_ICON_SIZE, LIST_ICON_SIZE, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                         item.setIcon(QIcon(pixmap))
+                    else:
+                        print(f"Errore caricando icona remota per lista {entry.icon_url}")
                 else: # Percorso locale
                     cover_file = Path(entry.icon_url)
                     if cover_file.exists():
@@ -720,11 +843,17 @@ class NDSDatabaseManager(QMainWindow):
         if entry.icon_url:
             pixmap = QPixmap()
             if entry.icon_url.startswith('http'):
-                if pixmap.load(entry.icon_url):
-                    pixmap = pixmap.scaled(DS_SCREEN_WIDTH, DS_SCREEN_HEIGHT, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                    self.details_cover.setPixmap(pixmap)
-                else:
-                    self.details_cover.setText("Errore caricamento remoto")
+                try:
+                    response = requests.get(entry.icon_url, timeout=5)
+                    response.raise_for_status()
+                    pixmap.loadFromData(response.content)
+                    if not pixmap.isNull():
+                        pixmap = pixmap.scaled(DS_SCREEN_WIDTH, DS_SCREEN_HEIGHT, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                        self.details_cover.setPixmap(pixmap)
+                    else:
+                        self.details_cover.setText("Errore caricamento remoto")
+                except requests.exceptions.RequestException as e:
+                    self.details_cover.setText(f"Errore caricamento remoto: {e}")
             else: # Percorso locale
                 cover_file = Path(entry.icon_url)
                 if cover_file.exists():
@@ -741,11 +870,12 @@ class NDSDatabaseManager(QMainWindow):
         
         details_text = f"""Nome: {entry.name}
 Piattaforma: {entry.platform}
-Regione: {entry.region}
-Versione (interna): {entry.version}
-Creatore (interna): {entry.creator}
+Regione (Utente): {entry.region}
+Versione (da ROM): {entry.version}
+Creatore (da ROM): {entry.creator}
 Game ID: {entry.game_id}
-Filename ROM (originale): {entry.filename}
+Regione (da ROM): {entry.extracted_region_from_rom}
+Filename ROM (su disco): {entry.filename}
 Dimensione ROM: {entry.filesize} bytes
 URL Download ROM: {entry.download_url}
 URL Copertina: {entry.icon_url if entry.icon_url else 'N/A'}
@@ -766,17 +896,15 @@ ID Interno (per file): {entry.internal_file_id}"""
         if dialog.exec() == QDialog.DialogCode.Accepted:
             updated_entry = dialog.get_updated_entry()
             
-            # Se la copertina è cambiata
-            if updated_entry.icon_url != entry.icon_url:
-                # Se la nuova icon_url è un percorso locale, copiala
-                if updated_entry.icon_url and not updated_entry.icon_url.startswith('http'):
-                    # Pulisci eventuali vecchie copertine locali associate a questo ID
-                    self.file_manager.remove_local_cover_file(updated_entry.internal_file_id)
-                    new_local_url = self.file_manager.copy_local_cover_file(updated_entry.icon_url, updated_entry.internal_file_id)
-                    updated_entry.icon_url = new_local_url
-                elif not updated_entry.icon_url: # Se la copertina è stata rimossa
-                    self.file_manager.remove_local_cover_file(updated_entry.internal_file_id) # Rimuovi eventuali locali
-
+            # Gestione della copertina
+            # Se la copertina esistente era locale e ora è un URL remoto o assente
+            if not entry.icon_url.startswith('http') and (updated_entry.icon_url.startswith('http') or not updated_entry.icon_url):
+                self.file_manager.remove_local_cover_file(updated_entry.internal_file_id)
+            # Se la nuova icon_url è un percorso locale, copialo e aggiorna l'URL
+            if updated_entry.icon_url and not updated_entry.icon_url.startswith('http'):
+                new_local_url = self.file_manager.copy_local_cover_file(updated_entry.icon_url, updated_entry.internal_file_id)
+                updated_entry.icon_url = new_local_url
+            
             current_item.setText(f"{updated_entry.name}")
             self.show_rom_details(updated_entry)
             self.save_database()
@@ -831,10 +959,14 @@ ID Interno (per file): {entry.internal_file_id}"""
                             line = line.strip()
                             if line and not line.startswith('#'):
                                 parts = line.split('\t')
-                                if len(parts) == 9:
-                                    new_line = line + "\t"
+                                # Adatta il parsing per includere il nuovo campo 'extracted_region_from_rom'
+                                if len(parts) == 9: # Vecchio formato senza game_id e extracted_region
+                                    new_line = line + "\t\t" # Aggiungi due campi vuoti
                                     self.entries.append(DatabaseEntry(new_line))
-                                elif len(parts) == 10:
+                                elif len(parts) == 10: # Formato con game_id ma senza extracted_region
+                                    new_line = line + "\t" # Aggiungi un campo vuoto
+                                    self.entries.append(DatabaseEntry(new_line))
+                                elif len(parts) == 11: # Nuovo formato completo
                                     self.entries.append(DatabaseEntry(line))
                                 else:
                                     print(f"Warning: Line with unexpected number of fields: {len(parts)} -> {line}")
