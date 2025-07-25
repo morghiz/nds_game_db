@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable
 from dataclasses import dataclass, asdict, field
 import json
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QTextEdit, QFileDialog, QMessageBox, QGroupBox, QGridLayout, QComboBox, QListWidget, QListWidgetItem, QSplitter, QTabWidget, QDialog, QDialogButtonBox
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QTextEdit, QFileDialog, QMessageBox, QGroupBox, QGridLayout, QComboBox, QListWidget, QListWidgetItem, QSplitter, QTabWidget, QDialog, QDialogButtonBox, QProgressDialog
+from PyQt6.QtCore import Qt, QSize, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap, QIcon
 from PIL import Image
 from io import BytesIO
@@ -91,12 +91,13 @@ class RomVersion:
     region: str = "ANY"
     version: str = ""
     download_url: str = ""
-    filename: str = ""
+    filename: str = "" # Nome del file ZIP su disco (es. "abc.zip")
+    internal_rom_filename: str = "" # Nome del file ROM all'interno dello ZIP (es. "game.nds")
     filesize: str = "0"
     icon_url: str = ""
     game_id: str = ""
     extracted_region_from_rom: str = "ANY"
-    internal_file_id: str = ""
+    internal_file_id: str = "" # ID univoco per i nomi dei file su disco (es. "XYZ_EUR_12345678")
 
     def __post_init__(self):
         if not self.internal_file_id:
@@ -107,6 +108,9 @@ class RomVersion:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]):
+        # Semplicemente ottieni il valore, predefinito a stringa vuota se non presente
+        # La logica di migrazione in load_database si occuperà di popolare questo campo per le vecchie voci
+        data['internal_rom_filename'] = data.get('internal_rom_filename', "")
         return cls(**data)
 
 @dataclass
@@ -137,9 +141,9 @@ class GameEntry:
             if rv.region and rv.region != "ANY":
                 title_with_region += f" - {rv.region}"
             
-            # Formato richiesto: titolo(con suffisso regionale) tab console tab regione tab versione tab creatore tab romurl tab filename+ext tab filesize tab coverurl
+            # Formato richiesto: titolo(con suffisso regionale) tab console tab regione tab versione tab creatore tab romurl tab filename_zip tab filesize tab coverurl tab internal_rom_filename
             line = (f"{title_with_region}\t{self.platform}\t{rv.region}\t{rv.version}\t{self.creator}\t"
-                    f"{rv.download_url}\t{rv.filename}\t{rv.filesize}\t{rv.icon_url}")
+                    f"{rv.download_url}\t{rv.filename}\t{rv.filesize}\t{rv.icon_url}\t{rv.internal_rom_filename}")
             lines.append(line)
         return lines
 
@@ -361,10 +365,12 @@ class AddRegionalRomDialog(QDialog):
         self.game_id = game_id
         self.game_creator = game_creator
         self.base_url = base_url
-        self.current_nds_path = None
+        self.current_nds_path = None # Path al file NDS estratto temporaneamente
+        self.original_nds_filename = "" # Nome del file NDS originale (anche se ZIP)
         self.nds_info = None
         self.file_manager = FileManager(self.base_url)
         self.new_rom_version = None
+        self.temp_zip_extraction_dir = None
 
         self.init_ui()
         self.load_initial_data()
@@ -386,10 +392,10 @@ class AddRegionalRomDialog(QDialog):
 
         file_group = QGroupBox("Carica File ROM")
         file_layout = QGridLayout(file_group)
-        file_layout.addWidget(QLabel("File NDS:"), 0, 0)
+        file_layout.addWidget(QLabel("File NDS/ZIP:"), 0, 0)
         self.nds_path_label = QLabel("Nessun file selezionato")
         file_layout.addWidget(self.nds_path_label, 0, 1)
-        self.load_nds_button = QPushButton("Seleziona NDS")
+        self.load_nds_button = QPushButton("Seleziona NDS/ZIP")
         self.load_nds_button.clicked.connect(self.load_nds_file)
         file_layout.addWidget(self.load_nds_button, 0, 2)
         layout.addWidget(file_group)
@@ -463,34 +469,24 @@ class AddRegionalRomDialog(QDialog):
                 self.region_combo.setCurrentIndex(region_index)
 
     def load_nds_file(self):
-        filepath, _ = QFileDialog.getOpenFileName(self, "Seleziona File NDS", "", "File NDS (*.nds *.dsi *.zip);;Tutti i file (*)")
+        filepath, _ = QFileDialog.getOpenFileName(self, "Seleziona File NDS/ZIP", "", "File NDS/ZIP (*.nds *.dsi *.zip);;Tutti i file (*)")
         if filepath:
-            original_filename = os.path.basename(filepath)
+            self.original_nds_filename = os.path.basename(filepath)
             self.current_nds_path = None
             extracted_rom_path = None
-            self.temp_zip_extraction_dir = None
+            
+            # Pulisci la directory temporanea precedente se esistente
+            if self.temp_zip_extraction_dir and self.temp_zip_extraction_dir.exists():
+                shutil.rmtree(self.temp_zip_extraction_dir)
+                self.temp_zip_extraction_dir = None
 
             if filepath.lower().endswith('.zip'):
                 try:
                     self.temp_zip_extraction_dir = Path(tempfile.mkdtemp())
-                    with zipfile.ZipFile(filepath, 'r') as zip_ref:
-                        zip_ref.extractall(self.temp_zip_extraction_dir)
+                    extracted_rom_path = self.file_manager.unpack_zip_rom(Path(filepath), self.temp_zip_extraction_dir)
                     
-                    largest_rom_path = None
-                    largest_rom_size = -1
-
-                    for root, _, files in os.walk(self.temp_zip_extraction_dir):
-                        for file in files:
-                            if file.lower().endswith(('.nds', '.dsi')):
-                                current_file_path = Path(root) / file
-                                current_file_size = os.path.getsize(current_file_path)
-                                if current_file_size > largest_rom_size:
-                                    largest_rom_size = current_file_size
-                                    largest_rom_path = current_file_path
-                    
-                    if largest_rom_path:
-                        extracted_rom_path = str(largest_rom_path)
-                        self.nds_path_label.setText(f"{original_filename} (estratto: {largest_rom_path.name})")
+                    if extracted_rom_path:
+                        self.nds_path_label.setText(f"{self.original_nds_filename} (estratto: {extracted_rom_path.name})")
                     else:
                         QMessageBox.warning(self, "Errore", "Nessun file .nds o .dsi trovato nell'archivio ZIP.")
                         self.ok_button.setEnabled(False)
@@ -507,7 +503,7 @@ class AddRegionalRomDialog(QDialog):
                     return
             else:
                 extracted_rom_path = filepath
-                self.nds_path_label.setText(original_filename)
+                self.nds_path_label.setText(self.original_nds_filename)
 
             self.current_nds_path = extracted_rom_path
             try:
@@ -545,6 +541,11 @@ class AddRegionalRomDialog(QDialog):
             self.rom_maker_code_label.setText("Creatore ROM: N/A")
             self.rom_version_label.setText("Versione ROM: N/A")
             self.rom_extracted_region_label.setText("Regione ROM (da ID): N/A")
+            # Pulisci la directory temporanea se l'utente annulla la selezione
+            if self.temp_zip_extraction_dir and self.temp_zip_extraction_dir.exists():
+                shutil.rmtree(self.temp_zip_extraction_dir)
+                self.temp_zip_extraction_dir = None
+
 
     def load_cover(self):
         filepath, _ = QFileDialog.getOpenFileName(self, "Seleziona Copertina Locale", "", "Immagini (*.png *.jpg *.jpeg *.gif *.bmp);;Tutti i file (*)")
@@ -567,15 +568,17 @@ class AddRegionalRomDialog(QDialog):
             region=self.region_combo.currentText(),
             version=str(self.nds_info.rom_version),
             game_id=self.nds_info.game_id,
-            extracted_region_from_rom=self.nds_info.region_from_rom
+            extracted_region_from_rom=self.nds_info.region_from_rom,
+            internal_rom_filename=os.path.basename(self.current_nds_path) # Salva il nome del file NDS interno allo ZIP
         )
         
-        rom_url, actual_rom_filename_on_disk = self.file_manager.copy_rom_file(
+        # Copia il file ROM (e lo zippa)
+        rom_url, actual_zip_filename = self.file_manager.copy_and_zip_rom_file(
             self.current_nds_path, new_rom_version.internal_file_id
         )
         new_rom_version.download_url = rom_url
-        new_rom_version.filename = actual_rom_filename_on_disk
-        new_rom_version.filesize = str(os.path.getsize(self.current_nds_path))
+        new_rom_version.filename = actual_zip_filename # Ora filename è il nome del file ZIP
+        new_rom_version.filesize = str(os.path.getsize(Path(self.file_manager.roms_dir) / actual_zip_filename))
 
         cover_url_to_save = ""
         if self.image_loader.current_cover_path:
@@ -590,6 +593,19 @@ class AddRegionalRomDialog(QDialog):
         self.new_rom_version = new_rom_version
         self.accept()
 
+    def reject(self):
+        # Pulisci la directory temporanea se l'utente annulla la finestra
+        if self.temp_zip_extraction_dir and self.temp_zip_extraction_dir.exists():
+            shutil.rmtree(self.temp_zip_extraction_dir)
+            self.temp_zip_extraction_dir = None
+        super().reject()
+
+    def closeEvent(self, event):
+        # Pulisci la directory temporanea quando la finestra viene chiusa
+        if self.temp_zip_extraction_dir and self.temp_zip_extraction_dir.exists():
+            shutil.rmtree(self.temp_zip_extraction_dir)
+            self.temp_zip_extraction_dir = None
+        super().closeEvent(event)
 
 class FileManager:
     def __init__(self, base_url: str = ""):
@@ -599,14 +615,19 @@ class FileManager:
         self.roms_dir.mkdir(parents=True, exist_ok=True)
         self.covers_dir.mkdir(parents=True, exist_ok=True)
     
-    def copy_rom_file(self, nds_path: str, file_identifier: str) -> tuple[str, str]:
-        rom_ext = Path(nds_path).suffix
-        nds_filename_on_disk = f"{file_identifier}{rom_ext}"
-        nds_dest = self.roms_dir / nds_filename_on_disk
+    def copy_and_zip_rom_file(self, nds_path: str, file_identifier: str) -> tuple[str, str]:
+        zip_filename = f"{file_identifier}.zip"
+        zip_dest = self.roms_dir / zip_filename
         
-        shutil.copy2(nds_path, nds_dest)
-        rom_url = f"{self.base_url}/assets/roms/{nds_filename_on_disk}" if self.base_url else f"assets/roms/{nds_filename_on_disk}"
-        return rom_url, nds_filename_on_disk
+        try:
+            with zipfile.ZipFile(zip_dest, 'w', zipfile.ZIP_DEFLATED) as zf:
+                # Assicurati che il nome del file all'interno dello ZIP sia solo il nome base
+                zf.write(nds_path, os.path.basename(nds_path))
+            
+            rom_url = f"{self.base_url}/assets/roms/{zip_filename}" if self.base_url else f"assets/roms/{zip_filename}"
+            return rom_url, zip_filename
+        except Exception as e:
+            raise Exception(f"Errore durante la compressione e copia del file ROM: {e}")
 
     def copy_local_cover_file(self, cover_path: str, file_identifier: str) -> str:
         if not cover_path or not Path(cover_path).exists():
@@ -633,12 +654,147 @@ class FileManager:
                     print(f"Errore eliminando copertina locale {cover_file}: {e}")
     
     def remove_rom_file(self, file_identifier: str):
+        # Rimuovi il file ZIP associato all'identifier
+        zip_file = self.roms_dir / f"{file_identifier}.zip"
+        if zip_file.exists():
+            try:
+                zip_file.unlink()
+            except OSError as e:
+                print(f"Errore eliminando file ROM ZIP {zip_file}: {e}")
+        # Rimuovi anche i vecchi file .nds/.dsi non zippati con lo stesso identifier
+        # Questo è importante per la pulizia dei file legacy
         for rom_file in self.roms_dir.glob(f"{file_identifier}.*"):
             if rom_file.suffix.lower() in ['.nds', '.dsi']:
                 try:
                     rom_file.unlink()
                 except OSError as e:
-                    print(f"Errore eliminando file ROM {rom_file}: {e}")
+                    print(f"Errore eliminando vecchio file ROM {rom_file}: {e}")
+        
+        # Gestione speciale per i casi in cui il filename nel DB non corrisponde all'internal_file_id
+        # Questo può accadere con vecchie entry non zippate
+        # Cerca file .nds/.dsi che potrebbero avere il nome indicato in `filename`
+        # ma non sono stati rimossi dall' `internal_file_id`
+        # Questa parte è più euristica e potrebbe non coprire tutti i casi edge
+        # ma aiuta con i file legacy che non seguono la nuova convenzione di naming
+        # Non è basata su `file_identifier` ma sul `filename` del DB
+        # Per evitare ambiguità, è meglio che il chiamante passi il nome esatto del file da rimuovere
+        # se non è basato sull'internal_file_id.
+        # Per ora, mi affido a `file_identifier` per la rimozione.
+
+    def unpack_zip_rom(self, zip_filepath: Path, temp_dir: Path) -> Optional[Path]:
+        try:
+            with zipfile.ZipFile(zip_filepath, 'r') as zip_ref:
+                largest_rom_path = None
+                largest_rom_size = -1
+                
+                nds_files_in_zip = [f for f in zip_ref.namelist() if f.lower().endswith(('.nds', '.dsi'))]
+                
+                if not nds_files_in_zip:
+                    return None
+
+                for file_in_zip in nds_files_in_zip:
+                    # Estrai il file nella directory temporanea
+                    extracted_file_path = temp_dir / Path(file_in_zip).name
+                    zip_ref.extract(file_in_zip, temp_dir)
+                    
+                    current_file_size = os.path.getsize(extracted_file_path)
+                    if current_file_size > largest_rom_size:
+                        largest_rom_size = current_file_size
+                        largest_rom_path = extracted_file_path
+                    else:
+                        # Rimuovi il file estratto se non è il più grande (per pulizia)
+                        extracted_file_path.unlink(missing_ok=True)
+                
+                return largest_rom_path
+
+        except Exception as e:
+            print(f"Errore durante l'estrazione del file ZIP {zip_filepath}: {e}")
+            return None
+
+class CompressionWorker(QThread):
+    progress_updated = pyqtSignal(int, int, str)
+    compression_finished = pyqtSignal(bool, str)
+
+    def __init__(self, entries: List[GameEntry], file_manager: FileManager):
+        super().__init__()
+        self.entries = entries
+        self.file_manager = file_manager
+        self.roms_to_compress = []
+
+    def run(self):
+        self.roms_to_compress = [] # Reset list for each run
+        
+        # Prima fase: identificare le ROM da comprimere
+        for game_entry in self.entries:
+            for rom_version in game_entry.rom_versions:
+                # Caso 1: Vecchie entry dove 'filename' era il nome del file .nds/.dsi non zippato
+                # e il file ZIP con internal_file_id non esiste.
+                # Il file .nds/.dsi dovrebbe trovarsi in self.file_manager.roms_dir
+                
+                # Percorso atteso del file ZIP (nuova convenzione)
+                expected_zip_path = self.file_manager.roms_dir / f"{rom_version.internal_file_id}.zip"
+                
+                # Percorso del file ROM originale (vecchia convenzione, se non è già zippato)
+                # Dobbiamo assicurarci che rom_version.filename non contenga path separators
+                # e sia solo il nome del file.
+                original_rom_filename_clean = Path(rom_version.filename).name # Estrae solo il nome del file
+                original_rom_path_legacy = self.file_manager.roms_dir / original_rom_filename_clean
+
+                # Condizione per identificare una ROM da comprimere:
+                # 1. Il file ZIP (con la nuova convenzione di naming) non esiste.
+                # 2. Esiste un file ROM non zippato con il nome indicato nel campo 'filename' del DB.
+                #    (Questo copre i casi in cui 'filename' era '.nds' o '.dsi')
+                # 3. Oppure, se 'filename' non è un .zip/.nds/.dsi (vecchie entry senza estensione)
+                #    e il file con quel nome esiste come .nds/.dsi.
+                
+                # Controlla se il file legacy non zippato esiste e il file ZIP non esiste
+                is_legacy_unzipped_and_exists = False
+                if original_rom_path_legacy.exists() and original_rom_path_legacy.suffix.lower() in ['.nds', '.dsi']:
+                    if not expected_zip_path.exists():
+                        is_legacy_unzipped_and_exists = True
+                
+                # Aggiungi alla lista solo se è un caso di ROM non zippata da comprimere
+                if is_legacy_unzipped_and_exists:
+                    self.roms_to_compress.append((rom_version, original_rom_path_legacy))
+
+
+        total_roms_to_process = len(self.roms_to_compress)
+
+        if not self.roms_to_compress:
+            self.compression_finished.emit(True, "Nessuna ROM non compressa trovata.")
+            return
+
+        processed_count = 0
+        try:
+            for rom_version, original_rom_path in self.roms_to_compress:
+                self.progress_updated.emit(processed_count, total_roms_to_process, f"Comprimo: {original_rom_path.name}")
+                
+                if not original_rom_path.exists():
+                    print(f"Avviso: File ROM originale non trovato per {original_rom_path.name}. Salto.")
+                    processed_count += 1
+                    continue
+
+                # Comprimi il file e aggiorna i dati della RomVersion
+                new_rom_url, new_zip_filename = self.file_manager.copy_and_zip_rom_file(
+                    str(original_rom_path), rom_version.internal_file_id
+                )
+                
+                # Rimuovi il vecchio file (non zippato) DOPO averlo compresso con successo
+                original_rom_path.unlink(missing_ok=True)
+
+                rom_version.download_url = new_rom_url
+                rom_version.filename = new_zip_filename # Ora punta al file ZIP
+                rom_version.filesize = str(os.path.getsize(self.file_manager.roms_dir / new_zip_filename))
+                # internal_rom_filename dovrebbe già essere corretto (nome del file NDS originale)
+
+                processed_count += 1
+                self.progress_updated.emit(processed_count, total_roms_to_process, f"Comprimo: {original_rom_path.name} - Completato")
+
+            self.compression_finished.emit(True, f"Completata la compressione di {processed_count} ROM.")
+
+        except Exception as e:
+            self.compression_finished.emit(False, f"Errore durante la compressione: {e}")
+
 
 class NDSDatabaseManager(QMainWindow):
     def __init__(self):
@@ -648,8 +804,13 @@ class NDSDatabaseManager(QMainWindow):
         self.url_path = "url.txt"
         self.entries: List[GameEntry] = []
         self.base_url = ""
-        self.current_nds_path = None
+        self.current_nds_path = None # Path al file NDS estratto temporaneamente
+        self.original_nds_filename = "" # Nome del file selezionato dall'utente (anche se ZIP)
         self.image_loader_add_tab = None 
+        self.temp_zip_extraction_dir_add_tab = None # Directory temporanea per add tab
+        self.compression_worker = None # Per il thread di compressione
+        self.progress_dialog = None # Per la finestra di progresso
+
         self.load_base_url()
         self.file_manager = FileManager(self.base_url)
         self.init_ui()
@@ -691,10 +852,10 @@ class NDSDatabaseManager(QMainWindow):
         layout.addWidget(url_group)
         file_group = QGroupBox("Carica File")
         file_layout = QGridLayout(file_group)
-        file_layout.addWidget(QLabel("File NDS:"), 0, 0)
+        file_layout.addWidget(QLabel("File NDS/ZIP:"), 0, 0)
         self.nds_path_label = QLabel("Nessun file selezionato")
         file_layout.addWidget(self.nds_path_label, 0, 1)
-        self.load_nds_button = QPushButton("Seleziona NDS")
+        self.load_nds_button = QPushButton("Seleziona NDS/ZIP")
         self.load_nds_button.clicked.connect(self.load_nds_file)
         file_layout.addWidget(self.load_nds_button, 0, 2)
         file_layout.addWidget(QLabel("Copertina:"), 1, 0)
@@ -770,25 +931,27 @@ class NDSDatabaseManager(QMainWindow):
         layout.addLayout(button_layout)
 
     def init_view_tab(self):
-        layout = QHBoxLayout(self.view_tab)
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        layout.addWidget(splitter)
-        list_widget = QWidget()
-        list_layout = QVBoxLayout(list_widget)
+        layout = QVBoxLayout(self.view_tab)
+        
+        main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        
+        list_widget_container = QWidget()
+        list_layout = QVBoxLayout(list_widget_container)
         list_layout.addWidget(QLabel("Giochi nel Database:"))
         self.rom_list = QListWidget()
         self.rom_list.itemClicked.connect(self.on_game_selected)
         list_layout.addWidget(self.rom_list)
+        
         list_buttons = QHBoxLayout()
         self.delete_button = QPushButton("Elimina Gioco Completo")
         self.delete_button.clicked.connect(self.delete_selected_game)
         self.delete_button.setEnabled(False)
         list_buttons.addWidget(self.delete_button)
         list_layout.addLayout(list_buttons)
-        splitter.addWidget(list_widget)
+        main_splitter.addWidget(list_widget_container)
         
-        details_widget = QWidget()
-        details_layout = QVBoxLayout(details_widget)
+        details_widget_container = QWidget()
+        details_layout = QVBoxLayout(details_widget_container)
         details_layout.addWidget(QLabel("Dettagli Versione ROM Selezionata:"))
         self.details_cover = QLabel()
         self.details_cover.setFixedSize(DS_SCREEN_WIDTH, DS_SCREEN_HEIGHT)
@@ -824,10 +987,17 @@ class NDSDatabaseManager(QMainWindow):
         related_buttons_layout.addWidget(self.delete_regional_rom_button)
         
         details_layout.addLayout(related_buttons_layout)
+        
+        self.rezip_rom_button = QPushButton("Ricompattare ROM Selezionata")
+        self.rezip_rom_button.clicked.connect(self.recompress_selected_rom)
+        self.rezip_rom_button.setEnabled(False)
+        details_layout.addWidget(self.rezip_rom_button)
 
+        main_splitter.addWidget(details_widget_container)
+        main_splitter.setSizes([400, 600]) # Adjusted sizes for better layout
 
-        splitter.addWidget(details_widget)
-        splitter.setSizes([400, 400])
+        layout.addWidget(main_splitter)
+
         global_buttons = QHBoxLayout()
         self.save_database_button = QPushButton("Salva Database")
         self.save_database_button.clicked.connect(self.save_database)
@@ -835,7 +1005,13 @@ class NDSDatabaseManager(QMainWindow):
         self.refresh_button = QPushButton("Aggiorna Lista")
         self.refresh_button.clicked.connect(self.refresh_rom_list)
         global_buttons.addWidget(self.refresh_button)
+        
+        self.compress_all_button = QPushButton("Comprimi tutte le ROM non zippate")
+        self.compress_all_button.clicked.connect(self.compress_all_unzipped_roms)
+        global_buttons.addWidget(self.compress_all_button)
+
         layout.addLayout(global_buttons)
+
 
     def update_base_url(self):
         self.base_url = self.base_url_edit.text().strip()
@@ -847,51 +1023,40 @@ class NDSDatabaseManager(QMainWindow):
             print(f"Errore salvando URL base: {e}")
 
     def load_nds_file(self):
-        filepath, _ = QFileDialog.getOpenFileName(self, "Seleziona File NDS", "", "File NDS (*.nds *.dsi *.zip);;Tutti i file (*)")
+        filepath, _ = QFileDialog.getOpenFileName(self, "Seleziona File NDS/ZIP", "", "File NDS/ZIP (*.nds *.dsi *.zip);;Tutti i file (*)")
         if filepath:
-            original_filename = os.path.basename(filepath)
+            self.original_nds_filename = os.path.basename(filepath)
             self.current_nds_path = None
             extracted_rom_path = None
-            self.temp_zip_extraction_dir = None
+            
+            if self.temp_zip_extraction_dir_add_tab and self.temp_zip_extraction_dir_add_tab.exists():
+                shutil.rmtree(self.temp_zip_extraction_dir_add_tab)
+                self.temp_zip_extraction_dir_add_tab = None
 
             if filepath.lower().endswith('.zip'):
                 try:
-                    self.temp_zip_extraction_dir = Path(tempfile.mkdtemp())
-                    with zipfile.ZipFile(filepath, 'r') as zip_ref:
-                        zip_ref.extractall(self.temp_zip_extraction_dir)
+                    self.temp_zip_extraction_dir_add_tab = Path(tempfile.mkdtemp())
+                    extracted_rom_path = self.file_manager.unpack_zip_rom(Path(filepath), self.temp_zip_extraction_dir_add_tab)
                     
-                    largest_rom_path = None
-                    largest_rom_size = -1
-
-                    for root, _, files in os.walk(self.temp_zip_extraction_dir):
-                        for file in files:
-                            if file.lower().endswith(('.nds', '.dsi')):
-                                current_file_path = Path(root) / file
-                                current_file_size = os.path.getsize(current_file_path)
-                                if current_file_size > largest_rom_size:
-                                    largest_rom_size = current_file_size
-                                    largest_rom_path = current_file_path
-                    
-                    if largest_rom_path:
-                        extracted_rom_path = str(largest_rom_path)
-                        self.nds_path_label.setText(f"{original_filename} (estratto: {largest_rom_path.name})")
+                    if extracted_rom_path:
+                        self.nds_path_label.setText(f"{self.original_nds_filename} (estratto: {extracted_rom_path.name})")
                     else:
                         QMessageBox.warning(self, "Errore", "Nessun file .nds o .dsi trovato nell'archivio ZIP.")
                         self.add_button.setEnabled(False)
-                        if self.temp_zip_extraction_dir and self.temp_zip_extraction_dir.exists():
-                            shutil.rmtree(self.temp_zip_extraction_dir)
-                            self.temp_zip_extraction_dir = None
+                        if self.temp_zip_extraction_dir_add_tab and self.temp_zip_extraction_dir_add_tab.exists():
+                            shutil.rmtree(self.temp_zip_extraction_dir_add_tab)
+                            self.temp_zip_extraction_dir_add_tab = None
                         return
                 except Exception as e:
                     QMessageBox.critical(self, "Errore", f"Errore durante l'estrazione o la gestione del file ZIP: {e}")
                     self.add_button.setEnabled(False)
-                    if self.temp_zip_extraction_dir and self.temp_zip_extraction_dir.exists():
-                        shutil.rmtree(self.temp_zip_extraction_dir)
-                        self.temp_zip_extraction_dir = None
+                    if self.temp_zip_extraction_dir_add_tab and self.temp_zip_extraction_dir_add_tab.exists():
+                        shutil.rmtree(self.temp_zip_extraction_dir_add_tab)
+                        self.temp_zip_extraction_dir_add_tab = None
                     return
             else:
                 extracted_rom_path = filepath
-                self.nds_path_label.setText(original_filename)
+                self.nds_path_label.setText(self.original_nds_filename)
 
             self.current_nds_path = extracted_rom_path
             try:
@@ -914,8 +1079,18 @@ class NDSDatabaseManager(QMainWindow):
             except Exception as e:
                 QMessageBox.warning(self, "Errore", f"Errore leggendo il file NDS: {e}")
                 self.add_button.setEnabled(False)
+                self.nds_info = None
+                self.rom_title_label.setText("Titolo ROM: N/A")
+                self.rom_details_game_id_label.setText("Game ID ROM: N/A")
+                self.rom_maker_code_label.setText("Creatore ROM: N/A")
+                self.rom_version_label.setText("Versione ROM: N/A")
+                self.rom_extracted_region_label_add_tab.setText("Regione ROM (da ID): N/A")
         else:
             self.add_button.setEnabled(False)
+            # Pulisci la directory temporanea se l'utente annulla
+            if self.temp_zip_extraction_dir_add_tab and self.temp_zip_extraction_dir_add_tab.exists():
+                shutil.rmtree(self.temp_zip_extraction_dir_add_tab)
+                self.temp_zip_extraction_dir_add_tab = None
 
     def load_cover_file(self):
         filepath, _ = QFileDialog.getOpenFileName(self, "Seleziona Copertina Locale", "", "Immagini (*.png *.jpg *.jpeg *.gif *.bmp);;Tutti i file (*)")
@@ -958,15 +1133,16 @@ class NDSDatabaseManager(QMainWindow):
                 region=self.region_combo.currentText(),
                 version=self.version_edit.text().strip() or str(nds_info.rom_version),
                 game_id=self.game_id_edit.text().strip() or nds_info.game_id,
-                extracted_region_from_rom=self.extracted_region_label_add_tab.text() or nds_info.region_from_rom
+                extracted_region_from_rom=self.extracted_region_label_add_tab.text() or nds_info.region_from_rom,
+                internal_rom_filename=os.path.basename(self.current_nds_path) # Salva il nome del file NDS interno allo ZIP
             )
 
-            rom_url, actual_rom_filename_on_disk = self.file_manager.copy_rom_file(
+            rom_url, actual_zip_filename = self.file_manager.copy_and_zip_rom_file(
                 self.current_nds_path, new_rom_version.internal_file_id
             )
             new_rom_version.download_url = rom_url
-            new_rom_version.filename = actual_rom_filename_on_disk
-            new_rom_version.filesize = str(os.path.getsize(self.current_nds_path))
+            new_rom_version.filename = actual_zip_filename # Ora filename è il nome del file ZIP
+            new_rom_version.filesize = str(os.path.getsize(Path(self.file_manager.roms_dir) / actual_zip_filename))
 
             cover_url_to_save = ""
             if self.image_loader_add_tab.current_cover_path:
@@ -1002,15 +1178,15 @@ class NDSDatabaseManager(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self.add_tab, "Errore", f"Errore aggiungendo la ROM: {e}")
         finally:
-            if hasattr(self, 'temp_zip_extraction_dir') and self.temp_zip_extraction_dir and self.temp_zip_extraction_dir.exists():
-                shutil.rmtree(self.temp_zip_extraction_dir)
-                self.temp_zip_extraction_dir = None
+            if self.temp_zip_extraction_dir_add_tab and self.temp_zip_extraction_dir_add_tab.exists():
+                shutil.rmtree(self.temp_zip_extraction_dir_add_tab)
+                self.temp_zip_extraction_dir_add_tab = None
     
     def clear_fields(self):
         self.current_nds_path = None
-        if hasattr(self, 'temp_zip_extraction_dir') and self.temp_zip_extraction_dir and self.temp_zip_extraction_dir.exists():
-            shutil.rmtree(self.temp_zip_extraction_dir)
-            self.temp_zip_extraction_dir = None
+        if self.temp_zip_extraction_dir_add_tab and self.temp_zip_extraction_dir_add_tab.exists():
+            shutil.rmtree(self.temp_zip_extraction_dir_add_tab)
+            self.temp_zip_extraction_dir_add_tab = None
         
         self.nds_path_label.setText("Nessun file selezionato")
         self.cover_path_label.setText("Nessuna copertina")
@@ -1074,7 +1250,7 @@ class NDSDatabaseManager(QMainWindow):
         if selected_game_entry.rom_versions:
             selected_game_entry.rom_versions.sort(key=lambda x: x.region)
             for rom_version in selected_game_entry.rom_versions:
-                display_name = rom_version.region
+                display_name = f"{rom_version.region} ({rom_version.internal_rom_filename})"
                 related_item = QListWidgetItem(display_name)
                 related_item.setData(Qt.ItemDataRole.UserRole, rom_version.id)
                 self.related_roms_list.addItem(related_item)
@@ -1088,6 +1264,7 @@ class NDSDatabaseManager(QMainWindow):
             self.details_text.clear()
             self.edit_regional_rom_button.setEnabled(False)
             self.delete_regional_rom_button.setEnabled(False)
+            self.rezip_rom_button.setEnabled(False)
 
 
         self.delete_button.setEnabled(True)
@@ -1096,6 +1273,13 @@ class NDSDatabaseManager(QMainWindow):
     def on_regional_rom_selected(self, item):
         rom_version_id = item.data(Qt.ItemDataRole.UserRole)
         if not rom_version_id:
+            # Questo accade se l'item è "Nessuna versione regionale..."
+            self.details_cover.clear()
+            self.details_cover.setText("Seleziona una ROM\nper vedere i dettagli")
+            self.details_text.clear()
+            self.edit_regional_rom_button.setEnabled(False)
+            self.delete_regional_rom_button.setEnabled(False)
+            self.rezip_rom_button.setEnabled(False)
             return
 
         selected_rom_version = None
@@ -1111,12 +1295,14 @@ class NDSDatabaseManager(QMainWindow):
             self.show_rom_details(selected_rom_version)
             self.edit_regional_rom_button.setEnabled(True)
             self.delete_regional_rom_button.setEnabled(True)
+            self.rezip_rom_button.setEnabled(True)
         else:
             self.details_cover.clear()
             self.details_cover.setText("Seleziona una ROM\nper vedere i dettagli")
             self.details_text.clear()
             self.edit_regional_rom_button.setEnabled(False)
             self.delete_regional_rom_button.setEnabled(False)
+            self.rezip_rom_button.setEnabled(False)
 
 
     def show_rom_details(self, rom_version: RomVersion):
@@ -1164,8 +1350,9 @@ Regione (Utente): {rom_version.region}
 Versione (da ROM): {rom_version.version}
 Game ID: {rom_version.game_id}
 Regione (da ROM): {rom_version.extracted_region_from_rom}
-Filename ROM (su disco): {rom_version.filename}
-Dimensione ROM: {rom_version.filesize} bytes
+Filename ZIP (su disco): {rom_version.filename}
+Filename ROM (interno ZIP): {rom_version.internal_rom_filename}
+Dimensione ZIP: {rom_version.filesize} bytes
 URL Download ROM: {rom_version.download_url}
 URL Copertina: {rom_version.icon_url if rom_version.icon_url else 'N/A'}
 ID Interno (per file): {rom_version.internal_file_id}"""
@@ -1194,6 +1381,7 @@ ID Interno (per file): {rom_version.internal_file_id}"""
                 self.save_database()
                 QMessageBox.information(self, "Successo", f"Nuova versione regionale '{new_rom_version.region}' aggiunta al gioco '{selected_game_entry.name}'.")
                 
+                # Reselect the game to update related_roms_list
                 for i in range(self.rom_list.count()):
                     item = self.rom_list.item(i)
                     if item.data(Qt.ItemDataRole.UserRole) == selected_game_entry.id:
@@ -1230,29 +1418,37 @@ ID Interno (per file): {rom_version.internal_file_id}"""
         if dialog.exec() == QDialog.DialogCode.Accepted:
             updated_rom_version = dialog.get_updated_rom_version()
             
+            # Se la vecchia icona era locale e la nuova non lo è (o è remota), rimuovila
             if not rom_version_to_edit.icon_url.startswith('http') and (updated_rom_version.icon_url.startswith('http') or not updated_rom_version.icon_url):
                 self.file_manager.remove_local_cover_file(updated_rom_version.internal_file_id)
+            
+            # Se la nuova icona è locale, copiala
             if updated_rom_version.icon_url and not updated_rom_version.icon_url.startswith('http'):
                 new_local_url = self.file_manager.copy_local_cover_file(updated_rom_version.icon_url, updated_rom_version.internal_file_id)
                 updated_rom_version.icon_url = new_local_url
             
-            current_rom_item.setText(updated_rom_version.region)
+            # Aggiorna il testo nell'elemento della lista correlata
+            current_rom_item.setText(f"{updated_rom_version.region} ({updated_rom_version.internal_rom_filename})")
             
             self.save_database()
             self.statusBar().showMessage(f"Versione regionale '{updated_rom_version.region}' del gioco '{parent_game_entry.name}' modificata.")
             
             self.show_rom_details(updated_rom_version)
             
+            # Re-seleziona il gioco principale e la rom regionale per aggiornare l'interfaccia
             if parent_game_entry:
                 for i in range(self.rom_list.count()):
                     item = self.rom_list.item(i)
                     if item.data(Qt.ItemDataRole.UserRole) == parent_game_entry.id:
                         self.rom_list.setCurrentItem(item)
-                        self.on_game_selected(item)
+                        self.on_game_selected(item) # Esto ripopolerà anche related_roms_list
+                        
+                        # Trova e seleziona nuovamente la ROM modificata nella lista correlata
                         for j in range(self.related_roms_list.count()):
                             r_item = self.related_roms_list.item(j)
                             if r_item.data(Qt.ItemDataRole.UserRole) == updated_rom_version.id:
                                 self.related_roms_list.setCurrentItem(r_item)
+                                self.on_regional_rom_selected(r_item) # Per aggiornare i dettagli
                                 break
                         break
 
@@ -1278,7 +1474,7 @@ ID Interno (per file): {rom_version.internal_file_id}"""
         
         if reply == QMessageBox.StandardButton.Yes:
             for rom_version in game_entry_to_delete.rom_versions:
-                self.file_manager.remove_rom_file(rom_version.internal_file_id)
+                self.file_manager.remove_rom_file(rom_version.internal_file_id) # Rimuoverà il file ZIP
                 self.file_manager.remove_local_cover_file(rom_version.internal_file_id)
             
             self.entries.remove(game_entry_to_delete)
@@ -1295,6 +1491,7 @@ ID Interno (per file): {rom_version.internal_file_id}"""
             self.add_regional_rom_button.setEnabled(False)
             self.edit_regional_rom_button.setEnabled(False)
             self.delete_regional_rom_button.setEnabled(False)
+            self.rezip_rom_button.setEnabled(False)
             
             self.save_database()
             self.statusBar().showMessage(f"Tutte le ROM per il gioco '{game_entry_to_delete.name}' eliminate dal database e dal disco.")
@@ -1329,7 +1526,7 @@ ID Interno (per file): {rom_version.internal_file_id}"""
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            self.file_manager.remove_rom_file(rom_version_to_delete.internal_file_id)
+            self.file_manager.remove_rom_file(rom_version_to_delete.internal_file_id) # Rimuoverà il file ZIP
             self.file_manager.remove_local_cover_file(rom_version_to_delete.internal_file_id)
 
             parent_game_entry.rom_versions.remove(rom_version_to_delete)
@@ -1357,16 +1554,161 @@ ID Interno (per file): {rom_version.internal_file_id}"""
                 self.related_roms_list.addItem("Nessuna versione regionale per questo gioco.")
                 self.edit_regional_rom_button.setEnabled(False)
                 self.delete_regional_rom_button.setEnabled(False)
+                self.rezip_rom_button.setEnabled(False)
+
+    def recompress_selected_rom(self):
+        current_rom_item = self.related_roms_list.currentItem()
+        if not current_rom_item:
+            QMessageBox.warning(self, "Avviso", "Seleziona una versione regionale dalla lista per ricompattarla.")
+            return
+
+        rom_version_id_to_recompress = current_rom_item.data(Qt.ItemDataRole.UserRole)
+        rom_version_to_recompress = None
+        for ge in self.entries:
+            for rv in ge.rom_versions:
+                if rv.id == rom_version_id_to_recompress:
+                    rom_version_to_recompress = rv
+                    break
+            if rom_version_to_recompress:
+                break
+        
+        if not rom_version_to_recompress:
+            return
+        
+        roms_path = self.file_manager.roms_dir
+        current_zip_path = roms_path / rom_version_to_recompress.filename
+        
+        if not current_zip_path.exists():
+            QMessageBox.warning(self, "Errore", f"Il file ZIP ROM '{rom_version_to_recompress.filename}' non esiste sul disco. Impossibile ricomprimere.")
+            return
+
+        temp_extraction_dir = None
+        try:
+            temp_extraction_dir = Path(tempfile.mkdtemp())
+            extracted_rom_path = self.file_manager.unpack_zip_rom(current_zip_path, temp_extraction_dir)
+
+            if not extracted_rom_path:
+                QMessageBox.warning(self, "Errore", "Impossibile estrarre la ROM dal file ZIP esistente. Controlla che il file ZIP sia valido.")
+                return
+
+            reply = QMessageBox.question(
+                self, "Conferma Ricompressione",
+                f"La ROM '{rom_version_to_recompress.internal_rom_filename}' verrà estratta, ri-zippata e il file esistente verrà sovrascritto.\n"
+                "Vuoi continuare?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                # Rimuovi il vecchio file ZIP
+                self.file_manager.remove_rom_file(rom_version_to_recompress.internal_file_id)
+
+                # Comprimi il file estratto e salvalo con lo stesso internal_file_id
+                rom_url, actual_zip_filename = self.file_manager.copy_and_zip_rom_file(
+                    str(extracted_rom_path), rom_version_to_recompress.internal_file_id
+                )
+                
+                rom_version_to_recompress.download_url = rom_url
+                rom_version_to_recompress.filename = actual_zip_filename
+                rom_version_to_recompress.filesize = str(os.path.getsize(Path(self.file_manager.roms_dir) / actual_zip_filename))
+                # internal_rom_filename dovrebbe rimanere lo stesso se è stato estratto correttamente
+
+                self.save_database()
+                self.show_rom_details(rom_version_to_recompress)
+                QMessageBox.information(self, "Successo", f"ROM '{rom_version_to_recompress.internal_rom_filename}' ricompressa con successo.")
+                self.statusBar().showMessage(f"ROM '{rom_version_to_recompress.internal_rom_filename}' ricompressa.")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Errore di ricompressione", f"Si è verificato un errore durante la ricompressione: {e}")
+        finally:
+            if temp_extraction_dir and temp_extraction_dir.exists():
+                shutil.rmtree(temp_extraction_dir)
+
+    def compress_all_unzipped_roms(self):
+        reply = QMessageBox.question(
+            self, "Conferma Compressione Massiva",
+            "Vuoi comprimere tutte le ROM non zippate nel database?\n"
+            "Questo processo potrebbe richiedere del tempo e i file originali non zippati verranno sostituiti dai file ZIP.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.No:
+            return
+
+        self.compress_all_button.setEnabled(False)
+        self.statusBar().showMessage("Avvio compressione ROM non zippate...")
+
+        self.progress_dialog = QProgressDialog("Comprimo ROM...", "Annulla", 0, 100, self)
+        self.progress_dialog.setWindowTitle("Compressione ROM")
+        self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self.progress_dialog.setAutoClose(False)
+        self.progress_dialog.setCancelButton(None) # Rimuovi il pulsante annulla per evitare interruzioni a metà
+
+        self.compression_worker = CompressionWorker(self.entries, self.file_manager)
+        self.compression_worker.progress_updated.connect(self.update_compression_progress)
+        self.compression_worker.compression_finished.connect(self.handle_compression_finished)
+        self.compression_worker.start()
+
+    def update_compression_progress(self, current: int, total: int, message: str):
+        if self.progress_dialog: 
+            self.progress_dialog.setMaximum(total)
+            self.progress_dialog.setValue(current)
+            self.progress_dialog.setLabelText(f"Comprimo ({current}/{total}): {message}")
+            self.statusBar().showMessage(f"Comprimo ({current}/{total}): {message}")
+
+    def handle_compression_finished(self, success: bool, message: str):
+        if self.progress_dialog: 
+            self.progress_dialog.close()
+            self.progress_dialog = None
+
+        if success:
+            QMessageBox.information(self, "Compressione Completata", message)
+            self.statusBar().showMessage(message)
+            self.save_database() # Salva il database dopo la compressione
+            self.refresh_rom_list() # Aggiorna la lista per riflettere i cambiamenti
+        else:
+            QMessageBox.critical(self, "Errore di Compressione", message)
+            self.statusBar().showMessage(f"Errore: {message}")
+        
+        self.compress_all_button.setEnabled(True)
 
 
     def load_database(self):
-        # Il caricamento si basa ora esclusivamente sul file JSON per semplicità.
-        # Il file TXT è considerato un formato di esportazione semplificato.
+        database_modified = False # Flag per tracciare se la migrazione è avvenuta
         if os.path.exists(self.json_database_path):
             try:
                 with open(self.json_database_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     self.entries = [GameEntry.from_dict(d) for d in data]
+
+                # --- Logica di Migrazione per internal_rom_filename ---
+                for game_entry in self.entries:
+                    for rom_version in game_entry.rom_versions:
+                        if not rom_version.internal_rom_filename:
+                            zip_file_path = self.file_manager.roms_dir / rom_version.filename
+                            # Se il "filename" nel database è un file ZIP esistente
+                            if zip_file_path.exists() and zip_file_path.suffix.lower() == '.zip':
+                                temp_dir = Path(tempfile.mkdtemp())
+                                try:
+                                    extracted_rom_path = self.file_manager.unpack_zip_rom(zip_file_path, temp_dir)
+                                    if extracted_rom_path:
+                                        rom_version.internal_rom_filename = extracted_rom_path.name
+                                        database_modified = True
+                                finally:
+                                    if temp_dir.exists():
+                                        shutil.rmtree(temp_dir)
+                            # Se il "filename" nel database è un file .nds/.dsi esistente (vecchie entry non zippate)
+                            elif zip_file_path.exists() and zip_file_path.suffix.lower() in ['.nds', '.dsi']:
+                                rom_version.internal_rom_filename = zip_file_path.name
+                                database_modified = True
+                # --- Fine Logica di Migrazione ---
+
+                if database_modified:
+                    QMessageBox.information(self, "Aggiornamento Database",
+                                            "Il database è stato aggiornato per includere i nomi dei file ROM interni. "
+                                            "Il database verrà salvato automaticamente.")
+                    self.save_database() # Salva il database aggiornato
+
                 self.refresh_rom_list()
                 self.statusBar().showMessage(f"Database JSON caricato: {len(self.entries)} giochi")
                 return
@@ -1375,7 +1717,6 @@ ID Interno (per file): {rom_version.internal_file_id}"""
             except Exception as e:
                 QMessageBox.warning(self, "Errore", f"Errore caricando il database JSON: {e}. Il database verrà inizializzato.")
         
-        # Se il JSON non esiste o fallisce, crea un database vuoto.
         try:
             with open(self.json_database_path, 'w', encoding='utf-8') as f:
                 json.dump([], f, indent=4)
@@ -1404,6 +1745,14 @@ ID Interno (per file): {rom_version.internal_file_id}"""
             )
         except Exception as e:
             QMessageBox.critical(self, "Errore", f"Errore salvando il database: {e}")
+
+    def closeEvent(self, event):
+        # Pulisci la directory temporanea quando l'applicazione viene chiusa
+        if self.temp_zip_extraction_dir_add_tab and self.temp_zip_extraction_dir_add_tab.exists():
+            shutil.rmtree(self.temp_zip_extraction_dir_add_tab)
+            self.temp_zip_extraction_dir_add_tab = None
+        super().closeEvent(event)
+
 
 def main():
     app = QApplication(sys.argv)

@@ -1,5 +1,198 @@
 [
     {
+        "id": "7631ddfb-6661-4150-8924-71b4589caa10",
+        "name": "Animal Crssing - Wild World",
+        "creator": "Nintendo",
+        "platform": "nds",
+        "game_id": "ADMP",
+        "rom_versions": [
+            {
+                "id": "07b15c6b-d64f-42a8-90c8-9a3fda24dccd",
+                "region": "EUR",
+                "version": "0",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/admp_eur_07b15c6b.nds",
+                "filename": "admp_eur_07b15c6b.nds",
+                "internal_rom_filename": "admp_eur_07b15c6b.nds",
+                "filesize": "67108864",
+                "icon_url": "https://art.gametdb.com/ds/coverS/EN/ADMP.png",
+                "game_id": "ADMP",
+                "extracted_region_from_rom": "EUR",
+                "internal_file_id": "admp_eur_07b15c6b"
+            },
+            {
+                "id": "5cee5030-3fc3-4faa-880f-2e445fe7bbd3",
+                "region": "USA",
+                "version": "0",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/admp_usa_5cee5030.nds",
+                "filename": "admp_usa_5cee5030.nds",
+                "internal_rom_filename": "admp_usa_5cee5030.nds",
+                "filesize": "67108864",
+                "icon_url": "https://art.gametdb.com/ds/coverS/EN/ADMP.png",
+                "game_id": "ADMP",
+                "extracted_region_from_rom": "EUR",
+                "internal_file_id": "admp_usa_5cee5030"
+            }
+        ]
+    },
+    {
+        "id": "c6c3c3b1-e83f-480e-b3fd-28ad4b5d741f",
+        "name": "Big Brain Academy",
+        "creator": "Nintendo",
+        "platform": "nds",
+        "game_id": "AYAE",
+        "rom_versions": [
+            {
+                "id": "c94751fd-2dd7-4625-94f4-9cb271a0741c",
+                "region": "EUR",
+                "version": "0",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/ayap_eur_c94751fd.zip",
+                "filename": "ayap_eur_c94751fd.zip",
+                "internal_rom_filename": "ayap_eur_c94751fd.nds",
+                "filesize": "4738282",
+                "icon_url": "https://art.gametdb.com/ds/coverS/EN/AYAP.png",
+                "game_id": "AYAP",
+                "extracted_region_from_rom": "EUR",
+                "internal_file_id": "ayap_eur_c94751fd"
+            },
+            {
+                "id": "0ca5ee63-f35a-4155-902c-40b8d895d573",
+                "region": "USA",
+                "version": "0",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/ayae_usa_0ca5ee63.zip",
+                "filename": "ayae_usa_0ca5ee63.zip",
+                "internal_rom_filename": "ayae_usa_0ca5ee63.nds",
+                "filesize": "1854069",
+                "icon_url": "https://art.gametdb.com/ds/coverS/US/AYAE.png",
+                "game_id": "AYAE",
+                "extracted_region_from_rom": "USA",
+                "internal_file_id": "ayae_usa_0ca5ee63"
+            }
+        ]
+    },
+    {
+        "id": "d0da8144-f8f1-4047-873d-7ab98018555f",
+        "name": "Call of Duty - Black Ops",
+        "creator": "Activision",
+        "platform": "nds",
+        "game_id": "BDYE",
+        "rom_versions": [
+            {
+                "id": "d9598101-9807-4d1e-a5af-253f04947db4",
+                "region": "EUR",
+                "version": "0",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/bdyy_eur_d9598101.zip",
+                "filename": "bdyy_eur_d9598101.zip",
+                "internal_rom_filename": "bdyy_eur_d9598101.nds",
+                "filesize": "51985848",
+                "icon_url": "https://art.gametdb.com/ds/coverS/EN/BDYY.png",
+                "game_id": "BDYY",
+                "extracted_region_from_rom": "EUR",
+                "internal_file_id": "bdyy_eur_d9598101"
+            },
+            {
+                "id": "219e7722-1b70-4de8-906d-21a7d512a59a",
+                "region": "USA",
+                "version": "0",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/bdye_usa_219e7722.zip",
+                "filename": "bdye_usa_219e7722.zip",
+                "internal_rom_filename": "bdye_usa_219e7722.nds",
+                "filesize": "46146335",
+                "icon_url": "https://art.gametdb.com/ds/coverS/US/BDYE.png",
+                "game_id": "BDYE",
+                "extracted_region_from_rom": "USA",
+                "internal_file_id": "bdye_usa_219e7722"
+            }
+        ]
+    },
+    {
+        "id": "b53f9924-1826-423d-a845-c7031151ae1c",
+        "name": "Call of Duty - Modern Warfare - Mobilized",
+        "creator": "Activision",
+        "platform": "nds",
+        "game_id": "C62E",
+        "rom_versions": [
+            {
+                "id": "9ba03d95-5476-44dc-850c-9b73c2df768d",
+                "region": "USA",
+                "version": "0",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/c62e_usa_9ba03d95.zip",
+                "filename": "c62e_usa_9ba03d95.zip",
+                "internal_rom_filename": "c62e_usa_9ba03d95.nds",
+                "filesize": "44613099",
+                "icon_url": "https://art.gametdb.com/ds/coverS/US/C62E.png",
+                "game_id": "C62E",
+                "extracted_region_from_rom": "USA",
+                "internal_file_id": "c62e_usa_9ba03d95"
+            }
+        ]
+    },
+    {
+        "id": "ee66159d-b7f3-4310-ac25-3d25c0cd78af",
+        "name": "Mario & Sonic at the Olympic Games",
+        "creator": "Sega",
+        "platform": "nds",
+        "game_id": "AY9E",
+        "rom_versions": [
+            {
+                "id": "18a35a47-773c-44eb-9c8c-d583f7d344d7",
+                "region": "USA",
+                "version": "0",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/ay9e_usa_18a35a47.zip",
+                "filename": "ay9e_usa_18a35a47.zip",
+                "internal_rom_filename": "ay9e_usa_18a35a47.nds",
+                "filesize": "100659153",
+                "icon_url": "https://art.gametdb.com/ds/coverS/US/AY9E.png",
+                "game_id": "AY9E",
+                "extracted_region_from_rom": "USA",
+                "internal_file_id": "ay9e_usa_18a35a47"
+            }
+        ]
+    },
+    {
+        "id": "498dd878-94b4-4364-b6ac-d4cbb926eb96",
+        "name": "Mario Kart DS",
+        "creator": "Nintendo",
+        "platform": "nds",
+        "game_id": "AMCE",
+        "rom_versions": [
+            {
+                "id": "1f58cb86-a7b0-428b-8547-34612a53fb44",
+                "region": "USA",
+                "version": "0",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/amce_usa_1f58cb86.zip",
+                "filename": "amce_usa_1f58cb86.zip",
+                "internal_rom_filename": "amce_usa_1f58cb86.nds",
+                "filesize": "19246483",
+                "icon_url": "https://art.gametdb.com/ds/coverS/US/AMCE.png",
+                "game_id": "AMCE",
+                "extracted_region_from_rom": "USA",
+                "internal_file_id": "amce_usa_1f58cb86"
+            }
+        ]
+    },
+    {
+        "id": "31efde03-e780-426a-a5a2-b4c011838f1c",
+        "name": "Mario Party DS",
+        "creator": "Nintendo",
+        "platform": "nds",
+        "game_id": "A8TE",
+        "rom_versions": [
+            {
+                "id": "2bc50224-ee66-4e90-8812-fed1dea3de47",
+                "region": "USA",
+                "version": "0",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/a8te_usa_2bc50224.zip",
+                "filename": "a8te_usa_2bc50224.zip",
+                "internal_rom_filename": "a8te_usa_2bc50224.nds",
+                "filesize": "19493860",
+                "icon_url": "https://art.gametdb.com/ds/coverS/US/A8TE.png",
+                "game_id": "A8TE",
+                "extracted_region_from_rom": "USA",
+                "internal_file_id": "a8te_usa_2bc50224"
+            }
+        ]
+    },
+    {
         "id": "de66cd7a-0160-42e6-9513-388a5bf48664",
         "name": "Super Mario 64 DS",
         "creator": "Nintendo",
@@ -10,25 +203,62 @@
                 "id": "8dd5d574-1c05-4894-ae1d-8d1921a720ea",
                 "region": "EUR",
                 "version": "0",
-                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/asmp_eur_8dd5d574.nds",
-                "filename": "asmp_eur_8dd5d574.nds",
-                "filesize": "16214400",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/asmp_eur_8dd5d574.zip",
+                "filename": "asmp_eur_8dd5d574.zip",
+                "internal_rom_filename": "asmp_eur_8dd5d574.nds",
+                "filesize": "12896828",
                 "icon_url": "https://art.gametdb.com/ds/coverS/EN/ASMP.png",
                 "game_id": "ASMP",
                 "extracted_region_from_rom": "EUR",
                 "internal_file_id": "asmp_eur_8dd5d574"
             },
             {
+                "id": "f844fa2c-8d02-41ca-866b-52c88b154bff",
+                "region": "JPN",
+                "version": "0",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/asmj_jpn_f844fa2c.zip",
+                "filename": "asmj_jpn_f844fa2c.zip",
+                "internal_rom_filename": "asmj_jpn_f844fa2c.nds",
+                "filesize": "12101616",
+                "icon_url": "https://art.gametdb.com/ds/coverS/JA/ASMJ.png",
+                "game_id": "ASMJ",
+                "extracted_region_from_rom": "JPN",
+                "internal_file_id": "asmj_jpn_f844fa2c"
+            },
+            {
                 "id": "034f841e-5c7d-4ebc-b5a6-80f98a5e440d",
                 "region": "USA",
                 "version": "0",
-                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/asme_usa_034f841e.nds",
-                "filename": "asme_usa_034f841e.nds",
-                "filesize": "16777216",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/asme_usa_034f841e.zip",
+                "filename": "asme_usa_034f841e.zip",
+                "internal_rom_filename": "asme_usa_034f841e.nds",
+                "filesize": "12093207",
                 "icon_url": "https://art.gametdb.com/ds/coverS/US/ASME.png",
                 "game_id": "ASME",
                 "extracted_region_from_rom": "USA",
                 "internal_file_id": "asme_usa_034f841e"
+            }
+        ]
+    },
+    {
+        "id": "eaf4c6f8-0549-46f8-a52f-f3a9f5fbd977",
+        "name": "Yoshi's Island DS",
+        "creator": "Nintendo",
+        "platform": "nds",
+        "game_id": "AYWE",
+        "rom_versions": [
+            {
+                "id": "0e1ce523-ce3f-4961-9889-77fa1a66a27d",
+                "region": "USA",
+                "version": "0",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/aywe_usa_0e1ce523.zip",
+                "filename": "aywe_usa_0e1ce523.zip",
+                "internal_rom_filename": "aywe_usa_0e1ce523.nds",
+                "filesize": "25128550",
+                "icon_url": "https://art.gametdb.com/ds/coverS/US/AYWE.png",
+                "game_id": "AYWE",
+                "extracted_region_from_rom": "USA",
+                "internal_file_id": "aywe_usa_0e1ce523"
             }
         ]
     }
