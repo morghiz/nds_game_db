@@ -1,7 +1,7 @@
 1
 	
-Animal Crossing - Wild World - EUR	nds	EUR	0	Nintendo	https://raw.githubusercontent.com/morghiz/nds_game_db/main/assets/roms/admp_eur_20b101f1.zip	admp_eur_20b101f1.zip	28743025	https://art.gametdb.com/ds/coverS/EN/ADMP.png
 Animal Crossing - Wild World - EUR	nds	EUR	0	Nintendo	https://raw.githubusercontent.com/morghiz/nds_game_db/main/assets/roms/admp_eur_acd5e1a5.zip	admp_eur_acd5e1a5.zip	28743059	https://art.gametdb.com/ds/coverS/EN/ADMP.png
+Animal Crossing - Wild World - USA	nds	USA	0	Nintendo	https://raw.githubusercontent.com/morghiz/nds_game_db/main/assets/roms/admp_eur_20b101f1.zip	admp_eur_20b101f1.zip	28743025	https://art.gametdb.com/ds/coverS/EN/ADMP.png
 Big Brain Academy - EUR	nds	EUR	0	Nintendo	https://raw.githubusercontent.com/morghiz/nds_game_db/main/assets/roms/ayap_eur_c94751fd.zip	ayap_eur_c94751fd.zip	4738282	https://art.gametdb.com/ds/coverS/EN/AYAP.png
 Big Brain Academy - USA	nds	USA	0	Nintendo	https://raw.githubusercontent.com/morghiz/nds_game_db/main/assets/roms/ayae_usa_0ca5ee63.zip	ayae_usa_0ca5ee63.zip	1854069	https://art.gametdb.com/ds/coverS/US/AYAE.png
 Call of Duty - Black Ops - EUR	nds	EUR	0	Activision	https://raw.githubusercontent.com/morghiz/nds_game_db/main/assets/roms/bdyy_eur_d9598101.zip	bdyy_eur_d9598101.zip	51985848	https://art.gametdb.com/ds/coverS/EN/BDYY.png
