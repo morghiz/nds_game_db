@@ -1,16 +1,16 @@
 1
 	
-Animal Crssing - Wild World - EUR	nds	EUR	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/admp_eur_07b15c6b.zip	admp_eur_07b15c6b.zip	67108864	https://art.gametdb.com/ds/coverS/EN/ADMP.png	admp_eur_07b15c6b.nds
-Animal Crssing - Wild World - USA	nds	USA	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/admp_usa_5cee5030.zip	admp_usa_5cee5030.zip	67108864	https://art.gametdb.com/ds/coverS/EN/ADMP.png	admp_usa_5cee5030.nds
-Big Brain Academy - EUR	nds	EUR	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/ayap_eur_c94751fd.zip	ayap_eur_c94751fd.zip	4738282	https://art.gametdb.com/ds/coverS/EN/AYAP.png	ayap_eur_c94751fd.nds
-Big Brain Academy - USA	nds	USA	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/ayae_usa_0ca5ee63.zip	ayae_usa_0ca5ee63.zip	1854069	https://art.gametdb.com/ds/coverS/US/AYAE.png	ayae_usa_0ca5ee63.nds
-Call of Duty - Black Ops - EUR	nds	EUR	0	Activision	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/bdyy_eur_d9598101.zip	bdyy_eur_d9598101.zip	51985848	https://art.gametdb.com/ds/coverS/EN/BDYY.png	bdyy_eur_d9598101.nds
-Call of Duty - Black Ops - USA	nds	USA	0	Activision	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/bdye_usa_219e7722.zip	bdye_usa_219e7722.zip	46146335	https://art.gametdb.com/ds/coverS/US/BDYE.png	bdye_usa_219e7722.nds
-Call of Duty - Modern Warfare - Mobilized - USA	nds	USA	0	Activision	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/c62e_usa_9ba03d95.zip	c62e_usa_9ba03d95.zip	44613099	https://art.gametdb.com/ds/coverS/US/C62E.png	c62e_usa_9ba03d95.nds
-Mario & Sonic at the Olympic Games - USA	nds	USA	0	Sega	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/ay9e_usa_18a35a47.zip	ay9e_usa_18a35a47.zip	100659153	https://art.gametdb.com/ds/coverS/US/AY9E.png	ay9e_usa_18a35a47.nds
-Mario Kart DS - USA	nds	USA	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/amce_usa_1f58cb86.zip	amce_usa_1f58cb86.zip	19246483	https://art.gametdb.com/ds/coverS/US/AMCE.png	amce_usa_1f58cb86.nds
-Mario Party DS - USA	nds	USA	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/a8te_usa_2bc50224.zip	a8te_usa_2bc50224.zip	19493860	https://art.gametdb.com/ds/coverS/US/A8TE.png	a8te_usa_2bc50224.nds
-Super Mario 64 DS - EUR	nds	EUR	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/asmp_eur_8dd5d574.zip	asmp_eur_8dd5d574.zip	12896828	https://art.gametdb.com/ds/coverS/EN/ASMP.png	asmp_eur_8dd5d574.nds
-Super Mario 64 DS - JPN	nds	JPN	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/asmj_jpn_f844fa2c.zip	asmj_jpn_f844fa2c.zip	12101616	https://art.gametdb.com/ds/coverS/JA/ASMJ.png	asmj_jpn_f844fa2c.nds
-Super Mario 64 DS - USA	nds	USA	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/asme_usa_034f841e.zip	asme_usa_034f841e.zip	12093207	https://art.gametdb.com/ds/coverS/US/ASME.png	asme_usa_034f841e.nds
-Yoshi's Island DS - USA	nds	USA	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/aywe_usa_0e1ce523.zip	aywe_usa_0e1ce523.zip	25128550	https://art.gametdb.com/ds/coverS/US/AYWE.png	aywe_usa_0e1ce523.nds
+Animal Crssing - Wild World - EUR	nds	EUR	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/admp_eur_07b15c6b.zip	admp_eur_07b15c6b.zip	67108864	https://art.gametdb.com/ds/coverS/EN/ADMP.png
+Animal Crssing - Wild World - USA	nds	USA	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/admp_usa_5cee5030.zip	admp_usa_5cee5030.zip	67108864	https://art.gametdb.com/ds/coverS/EN/ADMP.png
+Big Brain Academy - EUR	nds	EUR	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/ayap_eur_c94751fd.zip	ayap_eur_c94751fd.zip	4738282	https://art.gametdb.com/ds/coverS/EN/AYAP.png
+Big Brain Academy - USA	nds	USA	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/ayae_usa_0ca5ee63.zip	ayae_usa_0ca5ee63.zip	1854069	https://art.gametdb.com/ds/coverS/US/AYAE.png
+Call of Duty - Black Ops - EUR	nds	EUR	0	Activision	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/bdyy_eur_d9598101.zip	bdyy_eur_d9598101.zip	51985848	https://art.gametdb.com/ds/coverS/EN/BDYY.png
+Call of Duty - Black Ops - USA	nds	USA	0	Activision	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/bdye_usa_219e7722.zip	bdye_usa_219e7722.zip	46146335	https://art.gametdb.com/ds/coverS/US/BDYE.png
+Call of Duty - Modern Warfare - Mobilized - USA	nds	USA	0	Activision	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/c62e_usa_9ba03d95.zip	c62e_usa_9ba03d95.zip	44613099	https://art.gametdb.com/ds/coverS/US/C62E.png
+Mario & Sonic at the Olympic Games - USA	nds	USA	0	Sega	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/ay9e_usa_18a35a47.zip	ay9e_usa_18a35a47.zip	100659153	https://art.gametdb.com/ds/coverS/US/AY9E.png
+Mario Kart DS - USA	nds	USA	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/amce_usa_1f58cb86.zip	amce_usa_1f58cb86.zip	19246483	https://art.gametdb.com/ds/coverS/US/AMCE.png
+Mario Party DS - USA	nds	USA	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/a8te_usa_2bc50224.zip	a8te_usa_2bc50224.zip	19493860	https://art.gametdb.com/ds/coverS/US/A8TE.png
+Super Mario 64 DS - EUR	nds	EUR	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/asmp_eur_8dd5d574.zip	asmp_eur_8dd5d574.zip	12896828	https://art.gametdb.com/ds/coverS/EN/ASMP.png
+Super Mario 64 DS - JPN	nds	JPN	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/asmj_jpn_f844fa2c.zip	asmj_jpn_f844fa2c.zip	12101616	https://art.gametdb.com/ds/coverS/JA/ASMJ.png
+Super Mario 64 DS - USA	nds	USA	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/asme_usa_034f841e.zip	asme_usa_034f841e.zip	12093207	https://art.gametdb.com/ds/coverS/US/ASME.png
+Yoshi's Island DS - USA	nds	USA	0	Nintendo	https://raw.githack.com/morghiz/nds_game_db/main/assets/roms/aywe_usa_0e1ce523.zip	aywe_usa_0e1ce523.zip	25128550	https://art.gametdb.com/ds/coverS/US/AYWE.png

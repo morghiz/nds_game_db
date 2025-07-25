@@ -155,7 +155,7 @@ class GameEntry:
             
             # Formato richiesto: titolo(con suffisso regionale) tab console tab regione tab versione tab creatore tab romurl tab filename_zip tab filesize tab coverurl tab internal_rom_filename
             line = (f"{title_with_region}\t{self.platform}\t{rv.region}\t{rv.version}\t{self.creator}\t"
-                    f"{download_url_for_txt}\t{rv.filename}\t{rv.filesize}\t{cover_url_for_txt}\t{rv.internal_rom_filename}")
+                    f"{download_url_for_txt}\t{rv.filename}\t{rv.filesize}\t{cover_url_for_txt}")
             lines.append(line)
         return lines
 
