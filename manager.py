@@ -90,11 +90,11 @@ class RomVersion:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     region: str = "ANY"
     version: str = ""
-    download_url: str = ""
+    download_url: str = "" # Questo sarà un percorso relativo nel JSON
     filename: str = "" # Nome del file ZIP su disco (es. "abc.zip")
     internal_rom_filename: str = "" # Nome del file ROM all'interno dello ZIP (es. "game.nds")
     filesize: str = "0"
-    icon_url: str = ""
+    icon_url: str = "" # Questo sarà un percorso relativo nel JSON per file locali, o URL assoluto per remoti
     game_id: str = ""
     extracted_region_from_rom: str = "ANY"
     internal_file_id: str = "" # ID univoco per i nomi dei file su disco (es. "XYZ_EUR_12345678")
@@ -134,16 +134,28 @@ class GameEntry:
         game_entry.rom_versions = [RomVersion.from_dict(rv_data) for rv_data in rom_versions_data]
         return game_entry
 
-    def to_lines_for_txt(self) -> List[str]:
+    def to_lines_for_txt(self, base_url: str) -> List[str]:
         lines = []
         for rv in self.rom_versions:
             title_with_region = self.name
             if rv.region and rv.region != "ANY":
                 title_with_region += f" - {rv.region}"
             
+            # Costruisci l'URL completo per il download della ROM nel TXT
+            download_url_for_txt = rv.download_url
+            if download_url_for_txt and not download_url_for_txt.startswith('http'):
+                # Se è un percorso relativo, uniscilo con l'URL base
+                download_url_for_txt = f"{base_url}/{download_url_for_txt}" if base_url else download_url_for_txt
+            
+            # Costruisci l'URL completo per la copertina nel TXT
+            cover_url_for_txt = rv.icon_url
+            if cover_url_for_txt and not cover_url_for_txt.startswith('http'):
+                # Se è un percorso relativo, uniscilo con l'URL base
+                cover_url_for_txt = f"{base_url}/assets/covers/{cover_url_for_txt}" if base_url else f"assets/covers/{cover_url_for_txt}"
+            
             # Formato richiesto: titolo(con suffisso regionale) tab console tab regione tab versione tab creatore tab romurl tab filename_zip tab filesize tab coverurl tab internal_rom_filename
             line = (f"{title_with_region}\t{self.platform}\t{rv.region}\t{rv.version}\t{self.creator}\t"
-                    f"{rv.download_url}\t{rv.filename}\t{rv.filesize}\t{rv.icon_url}\t{rv.internal_rom_filename}")
+                    f"{download_url_for_txt}\t{rv.filename}\t{rv.filesize}\t{cover_url_for_txt}\t{rv.internal_rom_filename}")
             lines.append(line)
         return lines
 
@@ -335,8 +347,13 @@ class EditDialog(QDialog):
         self.game_id_edit.setText(self.rom_version.game_id)
         self.extracted_region_label.setText(self.rom_version.extracted_region_from_rom)
 
-        if self.rom_version.icon_url:
-            self.image_loader.load_image_to_label(self.rom_version.icon_url)
+        # Costruisci l'URL completo per la visualizzazione nella dialog di modifica
+        display_icon_url = self.rom_version.icon_url
+        if display_icon_url and not display_icon_url.startswith('http'):
+            display_icon_url = f"{self.base_url}/assets/covers/{display_icon_url}" if self.base_url else f"assets/covers/{display_icon_url}"
+
+        if display_icon_url:
+            self.image_loader.load_image_to_label(display_icon_url)
         else:
             self.image_loader.remove_cover()
 
@@ -355,7 +372,9 @@ class EditDialog(QDialog):
     def get_updated_rom_version(self) -> RomVersion:
         self.rom_version.region = self.region_combo.currentText()
         self.rom_version.version = self.version_edit.text().strip()
-        self.rom_version.icon_url = self.image_loader.current_cover_path
+        # Il current_cover_path dell'image_loader sarà un URL assoluto o un percorso locale
+        # Verrà gestito in edit_selected_regional_rom per salvare il relativo o l'assoluto
+        self.rom_version.icon_url = self.image_loader.current_cover_path 
         return self.rom_version
 
 class AddRegionalRomDialog(QDialog):
@@ -525,7 +544,7 @@ class AddRegionalRomDialog(QDialog):
                 self.image_loader.search_gametdb_cover(self.nds_info.game_id, auto_search=True)
 
             except Exception as e:
-                QMessageBox.warning(self, "Errore", f"Errore leggendo il file NDS: {e}")
+                QMessageBox.warning(self, "Erro", f"Errore leggendo il file NDS: {e}")
                 self.ok_button.setEnabled(False)
                 self.nds_info = None
                 self.rom_title_label.setText("Titolo ROM: N/A")
@@ -573,10 +592,11 @@ class AddRegionalRomDialog(QDialog):
         )
         
         # Copia il file ROM (e lo zippa)
-        rom_url, actual_zip_filename = self.file_manager.copy_and_zip_rom_file(
+        # Ora copy_and_zip_rom_file restituisce un percorso relativo
+        rom_relative_path, actual_zip_filename = self.file_manager.copy_and_zip_rom_file(
             self.current_nds_path, new_rom_version.internal_file_id
         )
-        new_rom_version.download_url = rom_url
+        new_rom_version.download_url = rom_relative_path # Salva il percorso relativo nel JSON
         new_rom_version.filename = actual_zip_filename # Ora filename è il nome del file ZIP
         new_rom_version.filesize = str(os.path.getsize(Path(self.file_manager.roms_dir) / actual_zip_filename))
 
@@ -585,6 +605,7 @@ class AddRegionalRomDialog(QDialog):
             if self.image_loader.current_cover_path.startswith('http'):
                 cover_url_to_save = self.image_loader.current_cover_path
             else:
+                # Salva il nome del file relativo per le copertine locali
                 cover_url_to_save = self.file_manager.copy_local_cover_file(
                     self.image_loader.current_cover_path, new_rom_version.internal_file_id
                 )
@@ -624,8 +645,9 @@ class FileManager:
                 # Assicurati che il nome del file all'interno dello ZIP sia solo il nome base
                 zf.write(nds_path, os.path.basename(nds_path))
             
-            rom_url = f"{self.base_url}/assets/roms/{zip_filename}" if self.base_url else f"assets/roms/{zip_filename}"
-            return rom_url, zip_filename
+            # Restituisce solo il percorso relativo per il JSON
+            rom_relative_path = f"assets/roms/{zip_filename}"
+            return rom_relative_path, zip_filename
         except Exception as e:
             raise Exception(f"Errore durante la compressione e copia del file ROM: {e}")
 
@@ -640,7 +662,7 @@ class FileManager:
             pil_image.thumbnail((DS_SCREEN_WIDTH, DS_SCREEN_HEIGHT), Image.LANCZOS)
             pil_image = pil_image.convert("P", palette=Image.Palette.ADAPTIVE, colors=256)
             pil_image.save(cover_dest, format='PNG')
-            return f"{self.base_url}/assets/covers/{cover_filename_on_disk}" if self.base_url else f"assets/covers/{cover_filename_on_disk}"
+            return cover_filename_on_disk # Ritorna il nome del file relativo
         except Exception as e:
             print(f"Errore copiando e ridimensionando copertina locale: {e}")
             return ""
@@ -775,14 +797,15 @@ class CompressionWorker(QThread):
                     continue
 
                 # Comprimi il file e aggiorna i dati della RomVersion
-                new_rom_url, new_zip_filename = self.file_manager.copy_and_zip_rom_file(
+                # Ora copy_and_zip_rom_file restituisce un percorso relativo
+                new_rom_relative_path, new_zip_filename = self.file_manager.copy_and_zip_rom_file(
                     str(original_rom_path), rom_version.internal_file_id
                 )
                 
                 # Rimuovi il vecchio file (non zippato) DOPO averlo compresso con successo
                 original_rom_path.unlink(missing_ok=True)
 
-                rom_version.download_url = new_rom_url
+                rom_version.download_url = new_rom_relative_path # Salva il percorso relativo
                 rom_version.filename = new_zip_filename # Ora punta al file ZIP
                 rom_version.filesize = str(os.path.getsize(self.file_manager.roms_dir / new_zip_filename))
                 # internal_rom_filename dovrebbe già essere corretto (nome del file NDS originale)
@@ -1137,10 +1160,11 @@ class NDSDatabaseManager(QMainWindow):
                 internal_rom_filename=os.path.basename(self.current_nds_path) # Salva il nome del file NDS interno allo ZIP
             )
 
-            rom_url, actual_zip_filename = self.file_manager.copy_and_zip_rom_file(
+            # Ora copy_and_zip_rom_file restituisce un percorso relativo
+            rom_relative_path, actual_zip_filename = self.file_manager.copy_and_zip_rom_file(
                 self.current_nds_path, new_rom_version.internal_file_id
             )
-            new_rom_version.download_url = rom_url
+            new_rom_version.download_url = rom_relative_path # Salva il percorso relativo nel JSON
             new_rom_version.filename = actual_zip_filename # Ora filename è il nome del file ZIP
             new_rom_version.filesize = str(os.path.getsize(Path(self.file_manager.roms_dir) / actual_zip_filename))
 
@@ -1149,6 +1173,7 @@ class NDSDatabaseManager(QMainWindow):
                 if self.image_loader_add_tab.current_cover_path.startswith('http'):
                     cover_url_to_save = self.image_loader_add_tab.current_cover_path
                 else:
+                    # Salva il nome del file relativo per le copertine locali
                     cover_url_to_save = self.file_manager.copy_local_cover_file(
                         self.image_loader_add_tab.current_cover_path, new_rom_version.internal_file_id
                     )
@@ -1216,24 +1241,18 @@ class NDSDatabaseManager(QMainWindow):
 
             if game_entry.rom_versions:
                 first_rom_version = game_entry.rom_versions[0]
-                if first_rom_version.icon_url:
+                display_icon_url = first_rom_version.icon_url
+                if display_icon_url and not display_icon_url.startswith('http'):
+                    # Se è un percorso relativo, uniscilo con l'URL base per la visualizzazione
+                    display_icon_url = f"{self.base_url}/assets/covers/{display_icon_url}" if self.base_url else f"assets/covers/{display_icon_url}"
+
+                if display_icon_url:
                     pixmap = QPixmap()
-                    if first_rom_version.icon_url.startswith('http'):
-                        if pixmap.load(first_rom_version.icon_url):
-                            pixmap = pixmap.scaled(LIST_ICON_SIZE, LIST_ICON_SIZE, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                            item.setIcon(QIcon(pixmap))
-                        else:
-                            print(f"Errore caricando icona remota per lista {first_rom_version.icon_url}")
+                    if pixmap.load(display_icon_url):
+                        pixmap = pixmap.scaled(LIST_ICON_SIZE, LIST_ICON_SIZE, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                        item.setIcon(QIcon(pixmap))
                     else:
-                        cover_file = Path(first_rom_version.icon_url)
-                        if cover_file.exists():
-                            try:
-                                pil_image = Image.open(str(cover_file))
-                                pil_image.thumbnail((LIST_ICON_SIZE, LIST_ICON_SIZE), Image.LANCZOS)
-                                pixmap = pil_to_qpixmap(pil_image)
-                                item.setIcon(QIcon(pixmap))
-                            except Exception as e:
-                                print(f"Errore caricando icona per lista (locale) {cover_file}: {e}")
+                        print(f"Errore caricando icona per lista {display_icon_url}")
             self.rom_list.addItem(item)
     
     def on_game_selected(self, item):
@@ -1309,31 +1328,18 @@ class NDSDatabaseManager(QMainWindow):
         self.details_cover.clear()
         self.details_cover.setText("Caricamento...")
 
-        if rom_version.icon_url:
+        display_icon_url = rom_version.icon_url
+        if display_icon_url and not display_icon_url.startswith('http'):
+            # Se è un percorso relativo, uniscilo con l'URL base per la visualizzazione
+            display_icon_url = f"{self.base_url}/assets/covers/{display_icon_url}" if self.base_url else f"assets/covers/{display_icon_url}"
+
+        if display_icon_url:
             pixmap = QPixmap()
-            if rom_version.icon_url.startswith('http'):
-                try:
-                    response = requests.get(rom_version.icon_url, timeout=5)
-                    response.raise_for_status()
-                    pixmap.loadFromData(response.content)
-                    if not pixmap.isNull():
-                        pixmap = pixmap.scaled(DS_SCREEN_WIDTH, DS_SCREEN_HEIGHT, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                        self.details_cover.setPixmap(pixmap)
-                    else:
-                        self.details_cover.setText("Errore caricamento remoto")
-                except requests.exceptions.RequestException as e:
-                    self.details_cover.setText(f"Errore caricamento remoto: {e}")
+            if pixmap.load(display_icon_url):
+                pixmap = pixmap.scaled(DS_SCREEN_WIDTH, DS_SCREEN_HEIGHT, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                self.details_cover.setPixmap(pixmap)
             else:
-                cover_file = Path(rom_version.icon_url)
-                if cover_file.exists():
-                    try:
-                        pil_image = Image.open(str(cover_file))
-                        pil_image.thumbnail((DS_SCREEN_WIDTH, DS_SCREEN_HEIGHT), Image.LANCZOS)
-                        self.details_cover.setPixmap(pil_to_qpixmap(pil_image))
-                    except Exception as e:
-                        self.details_cover.setText(f"Errore caricamento locale: {e}")
-                else:
-                    self.details_cover.setText("File copertina locale non trovato")
+                self.details_cover.setText("Errore caricamento copertina")
         else:
             self.details_cover.setText("Nessuna Copertina")
         
@@ -1418,14 +1424,18 @@ ID Interno (per file): {rom_version.internal_file_id}"""
         if dialog.exec() == QDialog.DialogCode.Accepted:
             updated_rom_version = dialog.get_updated_rom_version()
             
-            # Se la vecchia icona era locale e la nuova non lo è (o è remota), rimuovila
-            if not rom_version_to_edit.icon_url.startswith('http') and (updated_rom_version.icon_url.startswith('http') or not updated_rom_version.icon_url):
-                self.file_manager.remove_local_cover_file(updated_rom_version.internal_file_id)
-            
-            # Se la nuova icona è locale, copiala
+            # Se la copertina è stata modificata e il nuovo percorso non è un URL HTTP
+            # significa che è un percorso locale che deve essere copiato e salvato come relativo
             if updated_rom_version.icon_url and not updated_rom_version.icon_url.startswith('http'):
-                new_local_url = self.file_manager.copy_local_cover_file(updated_rom_version.icon_url, updated_rom_version.internal_file_id)
-                updated_rom_version.icon_url = new_local_url
+                new_local_filename = self.file_manager.copy_local_cover_file(updated_rom_version.icon_url, updated_rom_version.internal_file_id)
+                updated_rom_version.icon_url = new_local_filename
+            
+            # Se la vecchia icona era locale e la nuova non lo è (o è remota), rimuovila
+            # Controlla se il vecchio icon_url era un percorso relativo (non inizia con http)
+            # E se il nuovo icon_url è un URL http OPPURE è vuoto (rimossa)
+            if (rom_version_to_edit.icon_url and not rom_version_to_edit.icon_url.startswith('http')) and \
+               (updated_rom_version.icon_url.startswith('http') or not updated_rom_version.icon_url):
+                self.file_manager.remove_local_cover_file(rom_version_to_edit.internal_file_id)
             
             # Aggiorna il testo nell'elemento della lista correlata
             current_rom_item.setText(f"{updated_rom_version.region} ({updated_rom_version.internal_rom_filename})")
@@ -1604,11 +1614,12 @@ ID Interno (per file): {rom_version.internal_file_id}"""
                 self.file_manager.remove_rom_file(rom_version_to_recompress.internal_file_id)
 
                 # Comprimi il file estratto e salvalo con lo stesso internal_file_id
-                rom_url, actual_zip_filename = self.file_manager.copy_and_zip_rom_file(
+                # Ora copy_and_zip_rom_file restituisce un percorso relativo
+                rom_relative_path, actual_zip_filename = self.file_manager.copy_and_zip_rom_file(
                     str(extracted_rom_path), rom_version_to_recompress.internal_file_id
                 )
                 
-                rom_version_to_recompress.download_url = rom_url
+                rom_version_to_recompress.download_url = rom_relative_path # Salva il percorso relativo
                 rom_version_to_recompress.filename = actual_zip_filename
                 rom_version_to_recompress.filesize = str(os.path.getsize(Path(self.file_manager.roms_dir) / actual_zip_filename))
                 # internal_rom_filename dovrebbe rimanere lo stesso se è stato estratto correttamente
@@ -1733,7 +1744,8 @@ ID Interno (per file): {rom_version.internal_file_id}"""
                 f.write("1\n")
                 f.write("\t\n")
                 for game_entry in self.entries:
-                    for line in game_entry.to_lines_for_txt():
+                    # Pass self.base_url to the to_lines_for_txt method
+                    for line in game_entry.to_lines_for_txt(self.base_url):
                         f.write(line + '\n')
             
             self.statusBar().showMessage("Database salvato (JSON e TXT)")
