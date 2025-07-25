@@ -1,1 +1,1 @@
-https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/
+https://raw.githubusercontent.com/morghiz/nds_game_db/main/
