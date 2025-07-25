@@ -133,11 +133,13 @@ class GameEntry:
     def to_lines_for_txt(self) -> List[str]:
         lines = []
         for rv in self.rom_versions:
-            name_for_file = self.name
+            title_with_region = self.name
             if rv.region and rv.region != "ANY":
-                name_for_file += f" - {rv.region}"
-            # Nuovo formato: titolo tab console(ds/dsi) tab regione tab urlromfile tab filename+extension tab filesize tab coverurl
-            line = f"{name_for_file}\t{self.platform}\t{rv.region}\t{rv.download_url}\t{rv.filename}\t{rv.filesize}\t{rv.icon_url}"
+                title_with_region += f" - {rv.region}"
+            
+            # Formato richiesto: titolo(con suffisso regionale) tab console tab regione tab versione tab creatore tab romurl tab filename+ext tab filesize tab coverurl
+            line = (f"{title_with_region}\t{self.platform}\t{rv.region}\t{rv.version}\t{self.creator}\t"
+                    f"{rv.download_url}\t{rv.filename}\t{rv.filesize}\t{rv.icon_url}")
             lines.append(line)
         return lines
 
@@ -643,7 +645,6 @@ class NDSDatabaseManager(QMainWindow):
         super().__init__()
         self.json_database_path = "database.json"
         self.txt_database_path = "database.txt"
-        # Rimosso self.txt_relative_path
         self.url_path = "url.txt"
         self.entries: List[GameEntry] = []
         self.base_url = ""
@@ -1394,15 +1395,13 @@ ID Interno (per file): {rom_version.internal_file_id}"""
                     for line in game_entry.to_lines_for_txt():
                         f.write(line + '\n')
             
-            # Rimosso il salvataggio di database_relative.txt
-            
             self.statusBar().showMessage("Database salvato (JSON e TXT)")
             QMessageBox.information(
                 self, "Successo", 
                 f"Database salvato con successo!\n\n"
                 f"- Versione JSON: {self.json_database_path}\n"
                 f"- Versione completa TXT: {self.txt_database_path}"
-            ) # Rimosso il riferimento a txt_relative_path
+            )
         except Exception as e:
             QMessageBox.critical(self, "Errore", f"Errore salvando il database: {e}")
 
