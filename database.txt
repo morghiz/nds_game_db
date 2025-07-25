@@ -1,7 +1,7 @@
 1
 	
-Animal Crssing - Wild World - EUR	nds	EUR	0	Nintendo	https://raw.githubusercontent.com/morghiz/nds_game_db/main/assets/roms/admp_eur_07b15c6b.nds	admp_eur_07b15c6b.nds	67108864	https://art.gametdb.com/ds/coverS/EN/ADMP.png	admp_eur_07b15c6b.nds
-Animal Crssing - Wild World - USA	nds	USA	0	Nintendo	https://raw.githubusercontent.com/morghiz/nds_game_db/main/assets/roms/admp_usa_5cee5030.nds	admp_usa_5cee5030.nds	67108864	https://art.gametdb.com/ds/coverS/EN/ADMP.png	admp_usa_5cee5030.nds
+Animal Crssing - Wild World - EUR	nds	EUR	0	Nintendo	https://raw.githubusercontent.com/morghiz/nds_game_db/main/assets/roms/admp_eur_07b15c6b.zip	admp_eur_07b15c6b.zip	67108864	https://art.gametdb.com/ds/coverS/EN/ADMP.png	admp_eur_07b15c6b.nds
+Animal Crssing - Wild World - USA	nds	USA	0	Nintendo	https://raw.githubusercontent.com/morghiz/nds_game_db/main/assets/roms/admp_usa_5cee5030.zip	admp_usa_5cee5030.zip	67108864	https://art.gametdb.com/ds/coverS/EN/ADMP.png	admp_usa_5cee5030.nds
 Big Brain Academy - EUR	nds	EUR	0	Nintendo	https://raw.githubusercontent.com/morghiz/nds_game_db/main/assets/roms/ayap_eur_c94751fd.zip	ayap_eur_c94751fd.zip	4738282	https://art.gametdb.com/ds/coverS/EN/AYAP.png	ayap_eur_c94751fd.nds
 Big Brain Academy - USA	nds	USA	0	Nintendo	https://raw.githubusercontent.com/morghiz/nds_game_db/main/assets/roms/ayae_usa_0ca5ee63.zip	ayae_usa_0ca5ee63.zip	1854069	https://art.gametdb.com/ds/coverS/US/AYAE.png	ayae_usa_0ca5ee63.nds
 Call of Duty - Black Ops - EUR	nds	EUR	0	Activision	https://raw.githubusercontent.com/morghiz/nds_game_db/main/assets/roms/bdyy_eur_d9598101.zip	bdyy_eur_d9598101.zip	51985848	https://art.gametdb.com/ds/coverS/EN/BDYY.png	bdyy_eur_d9598101.nds
