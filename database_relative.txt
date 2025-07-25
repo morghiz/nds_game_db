@@ -1,3 +1,0 @@
-1
-	
-Super Mario 64 DS	nds	ANY	0	Nintendo	https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/s.mario64ds_0_any.nds	s.mario64ds_0_any.nds	16214400	https://art.gametdb.com/ds/coverS/EN/ASMP.png	ASMP	ANY

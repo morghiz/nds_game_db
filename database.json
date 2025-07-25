@@ -1,0 +1,35 @@
+[
+    {
+        "id": "de66cd7a-0160-42e6-9513-388a5bf48664",
+        "name": "Super Mario 64 DS",
+        "creator": "Nintendo",
+        "platform": "nds",
+        "game_id": "ASME",
+        "rom_versions": [
+            {
+                "id": "8dd5d574-1c05-4894-ae1d-8d1921a720ea",
+                "region": "EUR",
+                "version": "0",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/asmp_eur_8dd5d574.nds",
+                "filename": "asmp_eur_8dd5d574.nds",
+                "filesize": "16214400",
+                "icon_url": "https://art.gametdb.com/ds/coverS/EN/ASMP.png",
+                "game_id": "ASMP",
+                "extracted_region_from_rom": "EUR",
+                "internal_file_id": "asmp_eur_8dd5d574"
+            },
+            {
+                "id": "034f841e-5c7d-4ebc-b5a6-80f98a5e440d",
+                "region": "USA",
+                "version": "0",
+                "download_url": "https://raw.githubusercontent.com/morghiz/nds_game_db/refs/heads/main/assets/roms/asme_usa_034f841e.nds",
+                "filename": "asme_usa_034f841e.nds",
+                "filesize": "16777216",
+                "icon_url": "https://art.gametdb.com/ds/coverS/US/ASME.png",
+                "game_id": "ASME",
+                "extracted_region_from_rom": "USA",
+                "internal_file_id": "asme_usa_034f841e"
+            }
+        ]
+    }
+]
